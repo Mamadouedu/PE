@@ -73,3 +73,23 @@ export interface DetailOffreApi {
 export interface ErreurApi {
   detail: unknown;
 }
+
+export type StatutDerogation = "en_attente" | "approuvee" | "rejetee";
+
+export interface DerogationApi {
+  id: number;
+  statut: StatutDerogation;
+  niveau: number;
+  demandeur: string;
+  justification: string;
+  configuration: ConfigurationOffre;
+  version_referentiel: number;
+  client_code: string;
+  serie_code: string;
+  montant_mensuel_retenu: number;
+  validateur_email: string | null;
+  date_demande: string;
+  date_decision: string | null;
+  decideur: string | null;
+  commentaire_decision: string | null;
+}

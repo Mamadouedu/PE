@@ -58,7 +58,12 @@ def _base_propre():
     engine = create_engine(TEST_DATABASE_URL)
     create_all(engine)
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE journal_entries, referentiel_versions RESTART IDENTITY CASCADE"))
+        conn.execute(
+            text(
+                "TRUNCATE journal_entries, referentiel_versions, derogations "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
     yield
     engine.dispose()
 

@@ -1,4 +1,4 @@
-import type { ConfigurationOffre, DetailOffreApi, ErreurApi } from "./types";
+import type { ConfigurationOffre, DerogationApi, DetailOffreApi, ErreurApi } from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -13,6 +13,11 @@ export class ApiError extends Error {
   }
 }
 
+async function lireErreur(reponse: Response): Promise<never> {
+  const corps = (await reponse.json().catch(() => ({ detail: reponse.statusText }))) as ErreurApi;
+  throw new ApiError(reponse.status, corps.detail);
+}
+
 export async function chiffrerOffre(config: ConfigurationOffre): Promise<DetailOffreApi> {
   const reponse = await fetch(`${BASE_URL}/api/v1/prix`, {
     method: "POST",
@@ -20,10 +25,29 @@ export async function chiffrerOffre(config: ConfigurationOffre): Promise<DetailO
     body: JSON.stringify(config),
   });
 
-  if (!reponse.ok) {
-    const corps = (await reponse.json().catch(() => ({ detail: reponse.statusText }))) as ErreurApi;
-    throw new ApiError(reponse.status, corps.detail);
-  }
-
+  if (!reponse.ok) await lireErreur(reponse);
   return (await reponse.json()) as DetailOffreApi;
+}
+
+// M4-02 : la justification est obligatoire côté API (elle refuse une chaîne
+// vide) ; `demandeur` identifie le KAM tant qu'il n'y a pas d'authentification.
+export async function demanderDerogation(
+  configuration: ConfigurationOffre,
+  justification: string,
+  demandeur: string,
+): Promise<DerogationApi> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/derogations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Utilisateur": demandeur },
+    body: JSON.stringify({ configuration, justification }),
+  });
+
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as DerogationApi;
+}
+
+export async function obtenirDerogation(id: number): Promise<DerogationApi> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/derogations/${id}`);
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as DerogationApi;
 }

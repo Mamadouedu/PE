@@ -16,6 +16,7 @@ function messageErreur(detail: unknown): string {
 
 export default function App() {
   const [offre, setOffre] = useState<OffreKam | null>(null);
+  const [configuration, setConfiguration] = useState<ConfigurationOffre | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
 
@@ -25,6 +26,7 @@ export default function App() {
     try {
       const reponse = await chiffrerOffre(config);
       setOffre(versVueKam(reponse));
+      setConfiguration(config);
     } catch (e) {
       setOffre(null);
       if (e instanceof ApiError) {
@@ -49,7 +51,7 @@ export default function App() {
 
         <div className="zone-resultat">
           {erreur && <div className="erreur">{erreur}</div>}
-          {offre && <ResultatOffre offre={offre} />}
+          {offre && configuration && <ResultatOffre offre={offre} configuration={configuration} />}
           {!offre && !erreur && (
             <p className="aide-resultat">Remplissez la configuration et cliquez sur « Chiffrer ».</p>
           )}

@@ -11,12 +11,24 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
+from .derogation import (
+    DecisionInvalide,
+    Derogation,
+    DerogationNonNecessaire,
+    DerogationStore,
+    InMemoryDerogationStore,
+    StatutDerogation,
+    decider_derogation,
+    demander_derogation,
+)
 from .engine import calculer_offre, validateur_requis
 from .models import (
     BudgetPlanEntry,
@@ -94,8 +106,55 @@ def get_referentiel() -> Referentiel:
     return _referentiel
 
 
+def _build_derogation_store() -> DerogationStore:
+    """Même principe que `_build_referentiel` : PostgreSQL si `DATABASE_URL`
+    est défini, sinon un registre en mémoire."""
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        return InMemoryDerogationStore()
+
+    from .db import SqlAlchemyDerogationStore, make_session_factory
+
+    return SqlAlchemyDerogationStore(make_session_factory(database_url))
+
+
+_derogations = _build_derogation_store()
+
+
+def get_derogations() -> DerogationStore:
+    return _derogations
+
+
 def get_utilisateur(x_utilisateur: str = Header(..., description="E-mail de l'utilisateur")) -> str:
     return x_utilisateur
+
+
+def verifier_secret_webhook(
+    x_webhook_secret: str = Header(default="", description="Secret partagé avec Power Automate"),
+) -> None:
+    """Protège le webhook entrant (décision de dérogation) : sans secret
+    configuré, l'endpoint refuse tout appel plutôt que de l'accepter sans
+    vérification."""
+
+    secret_attendu = os.environ.get("POWER_AUTOMATE_CALLBACK_SECRET")
+    if not secret_attendu:
+        raise HTTPException(
+            status_code=501, detail="POWER_AUTOMATE_CALLBACK_SECRET n'est pas configuré"
+        )
+    if x_webhook_secret != secret_attendu:
+        raise HTTPException(status_code=403, detail="Secret invalide")
+
+
+class DemandeDerogationRequest(BaseModel):
+    configuration: ConfigurationOffre
+    justification: str = Field(min_length=1)
+
+
+class DecisionDerogationRequest(BaseModel):
+    decision: Literal["approuvee", "rejetee"]
+    decideur: str
+    commentaire: str | None = None
 
 
 @app.post("/api/v1/prix", response_model=DetailOffre)
@@ -111,6 +170,81 @@ def chiffrer_offre(
         return calculer_offre(version, config)
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/derogations", response_model=Derogation)
+def demander_une_derogation(
+    demande: DemandeDerogationRequest,
+    utilisateur: str = Depends(get_utilisateur),
+    referentiel: Referentiel = Depends(get_referentiel),
+    derogations: DerogationStore = Depends(get_derogations),
+) -> Derogation:
+    """Crée une demande de dérogation (M4-02 : justification obligatoire).
+
+    Le niveau et le validateur sont recalculés ici, jamais transmis par le
+    client (M4-01) : voir `derogation.demander_derogation`. Déclenche un
+    webhook best-effort vers Power Automate si `POWER_AUTOMATE_WEBHOOK_URL`
+    est défini (M4-03).
+    """
+
+    version = referentiel.version_publiee()
+    if version is None:
+        raise HTTPException(status_code=409, detail="Aucune version du référentiel n'est publiée")
+    try:
+        return demander_derogation(
+            derogations, version, demande.configuration, demande.justification, utilisateur
+        )
+    except DerogationNonNecessaire as exc:
+        raise HTTPException(
+            status_code=400, detail="Cette offre est dans les règles : aucune dérogation nécessaire"
+        ) from exc
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/derogations", response_model=list[Derogation])
+def lister_les_derogations(derogations: DerogationStore = Depends(get_derogations)) -> list[Derogation]:
+    """Le registre central des dérogations (M4-05)."""
+
+    return derogations.lister()
+
+
+@app.get("/api/v1/derogations/{id_}", response_model=Derogation)
+def obtenir_une_derogation(
+    id_: int, derogations: DerogationStore = Depends(get_derogations)
+) -> Derogation:
+    try:
+        return derogations.obtenir(id_)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Dérogation inconnue") from exc
+
+
+@app.post(
+    "/api/v1/derogations/{id_}/decision",
+    response_model=Derogation,
+    dependencies=[Depends(verifier_secret_webhook)],
+)
+def decider_une_derogation(
+    id_: int,
+    decision: DecisionDerogationRequest,
+    derogations: DerogationStore = Depends(get_derogations),
+) -> Derogation:
+    """Webhook entrant : la décision prise dans Teams, relayée par Power
+    Automate. Protégé par `POWER_AUTOMATE_CALLBACK_SECRET` (en-tête
+    `X-Webhook-Secret`)."""
+
+    try:
+        return decider_derogation(
+            derogations,
+            id_,
+            StatutDerogation(decision.decision),
+            decision.decideur,
+            decision.commentaire,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Dérogation inconnue") from exc
+    except DecisionInvalide as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/referentiel/publiee")

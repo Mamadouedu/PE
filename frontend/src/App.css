@@ -157,11 +157,96 @@
   background: color-mix(in srgb, var(--alerte) 15%, var(--surface));
   border: 1px solid var(--alerte);
   color: var(--alerte);
-  padding: 10px 14px;
+  padding: 12px 14px;
   border-radius: 8px;
   font-size: 13.5px;
-  font-weight: 600;
   margin-bottom: 18px;
+}
+
+.bandeau-projet > p:first-child {
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+.demande-validation {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--fg);
+  font-weight: 400;
+}
+
+.demande-validation label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.demande-validation input,
+.demande-validation textarea {
+  font: inherit;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+}
+
+.demande-validation button {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.demande-validation button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.demande-detail {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.demande-detail.aide {
+  font-style: italic;
+}
+
+.demande-statut {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14.5px;
+}
+
+.statut-en_attente .demande-statut {
+  color: var(--alerte);
+}
+
+.statut-approuvee .demande-statut {
+  color: var(--ok);
+}
+
+.statut-rejetee .demande-statut {
+  color: var(--erreur);
+}
+
+.erreur-inline {
+  margin: 0;
+  color: var(--erreur);
+  font-size: 12.5px;
 }
 
 .briques {

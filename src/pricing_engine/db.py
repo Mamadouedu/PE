@@ -25,9 +25,11 @@ from pydantic import BaseModel
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, create_engine, func, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
+from .derogation import Derogation, StatutDerogation
 from .models import (
     BudgetPlanEntry,
     Client,
+    ConfigurationOffre,
     GrilleDryLeaseEntry,
     Locomotive,
     Parametres,
@@ -51,6 +53,26 @@ class VersionRow(Base):
     date_publication: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     publie_par: Mapped[str | None] = mapped_column(String(255))
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
+class DerogationRow(Base):
+    __tablename__ = "derogations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    statut: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    niveau: Mapped[int] = mapped_column(Integer, nullable=False)
+    demandeur: Mapped[str] = mapped_column(String(255), nullable=False)
+    justification: Mapped[str] = mapped_column(Text, nullable=False)
+    configuration: Mapped[dict] = mapped_column(JSON, nullable=False)
+    version_referentiel: Mapped[int] = mapped_column(Integer, nullable=False)
+    client_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    serie_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    montant_mensuel_retenu: Mapped[float] = mapped_column(nullable=False)
+    validateur_email: Mapped[str | None] = mapped_column(String(255))
+    date_demande: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    date_decision: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decideur: Mapped[str | None] = mapped_column(String(255))
+    commentaire_decision: Mapped[str | None] = mapped_column(Text)
 
 
 class JournalRow(Base):
@@ -212,3 +234,86 @@ class SqlAlchemyReferentielBackend:
                 )
                 for r in rows
             ]
+
+
+def _row_to_derogation(row: DerogationRow) -> Derogation:
+    return Derogation(
+        id=row.id,
+        statut=StatutDerogation(row.statut),
+        niveau=row.niveau,
+        demandeur=row.demandeur,
+        justification=row.justification,
+        configuration=ConfigurationOffre.model_validate(row.configuration),
+        version_referentiel=row.version_referentiel,
+        client_code=row.client_code,
+        serie_code=row.serie_code,
+        montant_mensuel_retenu=row.montant_mensuel_retenu,
+        validateur_email=row.validateur_email,
+        date_demande=row.date_demande,
+        date_decision=row.date_decision,
+        decideur=row.decideur,
+        commentaire_decision=row.commentaire_decision,
+    )
+
+
+class SqlAlchemyDerogationStore:
+    """Backend PostgreSQL du registre des dérogations (M4-05)."""
+
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def prochain_id(self) -> int:
+        with self._session_factory() as session:
+            current_max = session.execute(select(func.max(DerogationRow.id))).scalar()
+            return (current_max or 0) + 1
+
+    def creer(self, derogation: Derogation) -> Derogation:
+        with self._session_factory() as session:
+            session.add(
+                DerogationRow(
+                    id=derogation.id,
+                    statut=derogation.statut.value,
+                    niveau=derogation.niveau,
+                    demandeur=derogation.demandeur,
+                    justification=derogation.justification,
+                    configuration=derogation.configuration.model_dump(mode="json"),
+                    version_referentiel=derogation.version_referentiel,
+                    client_code=derogation.client_code,
+                    serie_code=derogation.serie_code,
+                    montant_mensuel_retenu=derogation.montant_mensuel_retenu,
+                    validateur_email=derogation.validateur_email,
+                    date_demande=derogation.date_demande,
+                    date_decision=derogation.date_decision,
+                    decideur=derogation.decideur,
+                    commentaire_decision=derogation.commentaire_decision,
+                )
+            )
+            session.commit()
+        return derogation
+
+    def obtenir(self, id_: int) -> Derogation:
+        with self._session_factory() as session:
+            row = session.get(DerogationRow, id_)
+            if row is None:
+                raise KeyError(id_)
+            return _row_to_derogation(row)
+
+    def lister(self) -> list[Derogation]:
+        with self._session_factory() as session:
+            rows = (
+                session.execute(select(DerogationRow).order_by(DerogationRow.id.desc()))
+                .scalars()
+                .all()
+            )
+            return [_row_to_derogation(r) for r in rows]
+
+    def mettre_a_jour(self, derogation: Derogation) -> None:
+        with self._session_factory() as session:
+            row = session.get(DerogationRow, derogation.id)
+            if row is None:
+                raise KeyError(derogation.id)
+            row.statut = derogation.statut.value
+            row.date_decision = derogation.date_decision
+            row.decideur = derogation.decideur
+            row.commentaire_decision = derogation.commentaire_decision
+            session.commit()

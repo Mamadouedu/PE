@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import pricing_engine.api as api_module
+from pricing_engine.derogation import InMemoryDerogationStore
 from pricing_engine.referentiel import Referentiel
 
 HEADERS = {"X-Utilisateur": "pricing@akiem.com"}
@@ -12,6 +13,7 @@ HEADERS = {"X-Utilisateur": "pricing@akiem.com"}
 @pytest.fixture(autouse=True)
 def referentiel_propre():
     api_module._referentiel = Referentiel()
+    api_module._derogations = InMemoryDerogationStore()
     yield
 
 
@@ -162,3 +164,178 @@ def test_publication_bloquee_si_locomotive_de_serie_inconnue(client: TestClient)
     r = client.post(f"/api/v1/referentiel/brouillons/{numero}/publier", headers=HEADERS)
     assert r.status_code == 422
     assert r.json()["detail"]["anomalies"]
+
+
+def _publier(client: TestClient) -> int:
+    """`_publier_referentiel_complet` construit un brouillon complet mais ne
+    le publie pas (voir le test de cycle de vie, qui vérifie les contrôles
+    qualité entre les deux) ; ce raccourci publie directement, pour les
+    tests qui ont juste besoin d'un référentiel publié."""
+
+    numero = _publier_referentiel_complet(client)
+    r = client.post(f"/api/v1/referentiel/brouillons/{numero}/publier", headers=HEADERS)
+    assert r.status_code == 200, r.text
+    return numero
+
+
+def _config_hors_regles() -> dict:
+    return {
+        "client_code": "CLIENTOK",
+        "serie_code": "VECTRON",
+        "km_annuel": 120_000,
+        "duree_mois": 24,
+        "quantite": 1,
+        "date_debut": "2026-01-01",
+        "age_debut_ans": 5,
+        "km_cumules_debut": 600_000,
+        "prix_negocies": {"OM": 1_200.0},
+    }
+
+
+def test_demande_de_derogation_calcule_le_niveau_et_le_validateur(client: TestClient, monkeypatch):
+    monkeypatch.delenv("POWER_AUTOMATE_WEBHOOK_URL", raising=False)
+    _publier(client)
+
+    r = client.post(
+        "/api/v1/derogations",
+        json={"configuration": _config_hors_regles(), "justification": "remise fidélité"},
+        headers=HEADERS,
+    )
+
+    assert r.status_code == 200, r.text
+    derogation = r.json()
+    assert derogation["statut"] == "en_attente"
+    assert derogation["niveau"] == 2
+    assert derogation["validateur_email"] == "head@akiem.com"
+    assert derogation["demandeur"] == "pricing@akiem.com"
+    assert derogation["date_decision"] is None
+
+
+def test_demande_de_derogation_notifie_power_automate(client: TestClient, monkeypatch):
+    appels = []
+
+    def faux_post(url, json, timeout):
+        appels.append((url, json))
+
+        class FauxReponse:
+            status_code = 200
+
+        return FauxReponse()
+
+    monkeypatch.setenv("POWER_AUTOMATE_WEBHOOK_URL", "https://exemple.invalid/webhook")
+    monkeypatch.setattr("pricing_engine.derogation.httpx.post", faux_post)
+    _publier(client)
+
+    r = client.post(
+        "/api/v1/derogations",
+        json={"configuration": _config_hors_regles(), "justification": "remise fidélité"},
+        headers=HEADERS,
+    )
+
+    assert r.status_code == 200, r.text
+    assert len(appels) == 1
+    url, payload = appels[0]
+    assert url == "https://exemple.invalid/webhook"
+    assert payload["validateur_email"] == "head@akiem.com"
+    assert payload["derogation_id"] == r.json()["id"]
+
+
+def test_demande_de_derogation_refusee_si_offre_dans_les_regles(client: TestClient):
+    _publier(client)
+    config = _config_hors_regles()
+    config["prix_negocies"] = {}
+
+    r = client.post(
+        "/api/v1/derogations",
+        json={"configuration": config, "justification": "rien à négocier"},
+        headers=HEADERS,
+    )
+
+    assert r.status_code == 400
+
+
+def test_registre_liste_les_demandes(client: TestClient, monkeypatch):
+    monkeypatch.delenv("POWER_AUTOMATE_WEBHOOK_URL", raising=False)
+    _publier(client)
+    client.post(
+        "/api/v1/derogations",
+        json={"configuration": _config_hors_regles(), "justification": "a"},
+        headers=HEADERS,
+    )
+
+    r = client.get("/api/v1/derogations")
+
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+
+
+def test_decision_refusee_sans_secret_configure(client: TestClient, monkeypatch):
+    monkeypatch.delenv("POWER_AUTOMATE_CALLBACK_SECRET", raising=False)
+
+    r = client.post(
+        "/api/v1/derogations/1/decision",
+        json={"decision": "approuvee", "decideur": "manager@akiem.com"},
+    )
+
+    assert r.status_code == 501
+
+
+def test_decision_refusee_avec_un_mauvais_secret(client: TestClient, monkeypatch):
+    monkeypatch.setenv("POWER_AUTOMATE_CALLBACK_SECRET", "le-bon-secret")
+
+    r = client.post(
+        "/api/v1/derogations/1/decision",
+        json={"decision": "approuvee", "decideur": "manager@akiem.com"},
+        headers={"X-Webhook-Secret": "mauvais-secret"},
+    )
+
+    assert r.status_code == 403
+
+
+def test_decision_approuvee_via_le_webhook_entrant(client: TestClient, monkeypatch):
+    monkeypatch.delenv("POWER_AUTOMATE_WEBHOOK_URL", raising=False)
+    monkeypatch.setenv("POWER_AUTOMATE_CALLBACK_SECRET", "le-bon-secret")
+    _publier(client)
+    id_derogation = client.post(
+        "/api/v1/derogations",
+        json={"configuration": _config_hors_regles(), "justification": "remise fidélité"},
+        headers=HEADERS,
+    ).json()["id"]
+
+    r = client.post(
+        f"/api/v1/derogations/{id_derogation}/decision",
+        json={"decision": "approuvee", "decideur": "manager@akiem.com", "commentaire": "ok"},
+        headers={"X-Webhook-Secret": "le-bon-secret"},
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["statut"] == "approuvee"
+    assert r.json()["decideur"] == "manager@akiem.com"
+
+    # Et c'est bien persisté dans le registre.
+    assert client.get(f"/api/v1/derogations/{id_derogation}").json()["statut"] == "approuvee"
+
+
+def test_decision_sur_une_derogation_deja_decidee_est_refusee(client: TestClient, monkeypatch):
+    monkeypatch.delenv("POWER_AUTOMATE_WEBHOOK_URL", raising=False)
+    monkeypatch.setenv("POWER_AUTOMATE_CALLBACK_SECRET", "le-bon-secret")
+    _publier(client)
+    id_derogation = client.post(
+        "/api/v1/derogations",
+        json={"configuration": _config_hors_regles(), "justification": "remise fidélité"},
+        headers=HEADERS,
+    ).json()["id"]
+    headers_secret = {"X-Webhook-Secret": "le-bon-secret"}
+    client.post(
+        f"/api/v1/derogations/{id_derogation}/decision",
+        json={"decision": "approuvee", "decideur": "manager@akiem.com"},
+        headers=headers_secret,
+    )
+
+    r = client.post(
+        f"/api/v1/derogations/{id_derogation}/decision",
+        json={"decision": "rejetee", "decideur": "manager@akiem.com"},
+        headers=headers_secret,
+    )
+
+    assert r.status_code == 409

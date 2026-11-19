@@ -1,4 +1,6 @@
 import type { OffreKam } from "../api/offre";
+import type { ConfigurationOffre } from "../api/types";
+import { DemandeValidation } from "./DemandeValidation";
 import { JaugeNegociation } from "./JaugeNegociation";
 
 const LIBELLE_STATUT: Record<string, string> = {
@@ -21,15 +23,19 @@ const formatPourcent = new Intl.NumberFormat("fr-FR", {
 
 interface Props {
   offre: OffreKam;
+  configuration: ConfigurationOffre;
 }
 
-export function ResultatOffre({ offre }: Props) {
+export function ResultatOffre({ offre, configuration }: Props) {
   return (
     <div className="resultat-offre">
       {!offre.envoiDirectPossible && (
         <div className="bandeau-projet">
-          PROJET — en attente de validation ({offre.libelleNiveau}). Cette offre ne peut pas être
-          envoyée telle quelle.
+          <p>
+            PROJET — en attente de validation ({offre.libelleNiveau}). Cette offre ne peut pas être
+            envoyée telle quelle.
+          </p>
+          <DemandeValidation libelleNiveau={offre.libelleNiveau} configuration={configuration} />
         </div>
       )}
 
