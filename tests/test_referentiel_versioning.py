@@ -59,7 +59,7 @@ def test_journal_enregistre_qui_quand_avant_apres_raison():
     draft = referentiel.nouveau_brouillon()
 
     referentiel.enregistrer_modification(
-        version_numero=draft.numero,
+        draft=draft,
         table="series",
         action="set",
         avant=None,

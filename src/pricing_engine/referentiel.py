@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel
 
@@ -54,6 +54,7 @@ class AnomalieControleQualite(BaseModel):
 
 
 class EntreeJournal(BaseModel):
+    version_numero: int
     horodatage: datetime
     utilisateur: str
     table: str
@@ -120,36 +121,85 @@ class VersionReferentiel:
         return None
 
 
-class Referentiel:
-    """Dépôt versionné du référentiel pricing."""
+class ReferentielBackend(Protocol):
+    """Port de persistance du référentiel : une implémentation en mémoire
+    (par défaut, pour les tests et le développement rapide) et une
+    implémentation PostgreSQL (`db.SqlAlchemyReferentielBackend`, pour la
+    version sur mesure sans Dataverse)."""
+
+    def load_published(self) -> VersionReferentiel | None: ...
+    def load(self, numero: int) -> VersionReferentiel: ...
+    def save(self, version: VersionReferentiel) -> None: ...
+    def next_numero(self) -> int: ...
+    def append_journal(self, entry: EntreeJournal) -> None: ...
+    def list_journal(self) -> list[EntreeJournal]: ...
+
+
+class InMemoryReferentielBackend:
+    """Backend par défaut : objets Python en mémoire, rien de persistant.
+
+    Utilisé par les tests et par toute session `Referentiel()` sans backend
+    explicite ; remplacé par `db.SqlAlchemyReferentielBackend` dès que
+    `DATABASE_URL` est défini (voir `api.py`).
+    """
 
     def __init__(self) -> None:
         self._versions: dict[int, VersionReferentiel] = {}
         self._prochain_numero = 1
         self._journal: list[EntreeJournal] = []
 
-    @property
-    def journal(self) -> list[EntreeJournal]:
-        return list(self._journal)
-
-    def version_publiee(self) -> VersionReferentiel | None:
+    def load_published(self) -> VersionReferentiel | None:
         candidates = [v for v in self._versions.values() if v.statut == StatutVersion.PUBLIE]
         return max(candidates, key=lambda v: v.numero, default=None)
 
-    def version(self, numero: int) -> VersionReferentiel:
+    def load(self, numero: int) -> VersionReferentiel:
         return self._versions[numero]
 
-    def nouveau_brouillon(self) -> VersionReferentiel:
-        base = self.version_publiee()
+    def save(self, version: VersionReferentiel) -> None:
+        self._versions[version.numero] = version
+
+    def next_numero(self) -> int:
         numero = self._prochain_numero
         self._prochain_numero += 1
+        return numero
+
+    def append_journal(self, entry: EntreeJournal) -> None:
+        self._journal.append(entry)
+
+    def list_journal(self) -> list[EntreeJournal]:
+        return list(self._journal)
+
+
+class Referentiel:
+    """Dépôt versionné du référentiel pricing.
+
+    Orchestration pure (versioning, contrôles qualité, journal) ; le
+    stockage est délégué à un `ReferentielBackend` pluggable.
+    """
+
+    def __init__(self, backend: ReferentielBackend | None = None) -> None:
+        self._backend = backend or InMemoryReferentielBackend()
+
+    @property
+    def journal(self) -> list[EntreeJournal]:
+        return self._backend.list_journal()
+
+    def version_publiee(self) -> VersionReferentiel | None:
+        return self._backend.load_published()
+
+    def version(self, numero: int) -> VersionReferentiel:
+        return self._backend.load(numero)
+
+    def nouveau_brouillon(self) -> VersionReferentiel:
+        base = self._backend.load_published()
+        numero = self._backend.next_numero()
         draft = base.copier_brouillon(numero) if base else VersionReferentiel(numero=numero)
-        self._versions[numero] = draft
+        self._backend.save(draft)
         return draft
 
     def enregistrer_modification(
         self,
-        version_numero: int,
+        draft: VersionReferentiel,
         table: str,
         action: str,
         avant: Any,
@@ -158,10 +208,15 @@ class Referentiel:
         raison: str,
         valide_par: str | None = None,
     ) -> None:
+        """Persiste `draft` (tel qu'il a été mutable par l'appelant) et
+        journalise le changement (M1-05)."""
+
         if table != "*" and table not in PROPRIETAIRES:
             raise ValueError(f"Table inconnue : {table}")
-        self._journal.append(
+        self._backend.save(draft)
+        self._backend.append_journal(
             EntreeJournal(
+                version_numero=draft.numero,
                 horodatage=datetime.now(timezone.utc),
                 utilisateur=utilisateur,
                 table=table,
@@ -316,7 +371,7 @@ class Referentiel:
     def publier(self, version_numero: int, utilisateur: str) -> list[AnomalieControleQualite]:
         """Publie un brouillon. Bloqué si une anomalie bloquante subsiste (M1-04)."""
 
-        draft = self._versions[version_numero]
+        draft = self._backend.load(version_numero)
         if draft.statut != StatutVersion.BROUILLON:
             raise ValueError("Seul un brouillon peut être publié")
 
@@ -324,16 +379,17 @@ class Referentiel:
         if any(a.bloquante for a in anomalies):
             return anomalies
 
-        ancienne = self.version_publiee()
+        ancienne = self._backend.load_published()
         if ancienne is not None:
             ancienne.statut = StatutVersion.ARCHIVE
+            self._backend.save(ancienne)
 
         draft.statut = StatutVersion.PUBLIE
         draft.date_publication = datetime.now(timezone.utc)
         draft.publie_par = utilisateur
 
         self.enregistrer_modification(
-            version_numero=version_numero,
+            draft,
             table="*",
             action="publication",
             avant=ancienne.numero if ancienne else None,

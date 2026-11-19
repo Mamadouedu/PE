@@ -9,6 +9,8 @@ une version minimale ; en cible, la saisie se fait dans Dataverse.
 
 from __future__ import annotations
 
+import os
+
 from fastapi import Body, Depends, FastAPI, Header, HTTPException
 
 from .engine import calculer_offre, validateur_requis
@@ -32,7 +34,22 @@ app = FastAPI(
     version="0.1.0",
 )
 
-_referentiel = Referentiel()
+
+def _build_referentiel() -> Referentiel:
+    """Backend PostgreSQL si `DATABASE_URL` est défini (version sur mesure,
+    sans Dataverse) ; sinon un backend en mémoire, pratique en local et pour
+    les tests qui ne portent pas sur la persistance."""
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        return Referentiel()
+
+    from .db import SqlAlchemyReferentielBackend, make_session_factory
+
+    return Referentiel(SqlAlchemyReferentielBackend(make_session_factory(database_url)))
+
+
+_referentiel = _build_referentiel()
 
 
 def get_referentiel() -> Referentiel:
@@ -92,7 +109,7 @@ def definir_serie(
     avant = draft.series.get(code)
     draft.series[code] = serie
     referentiel.enregistrer_modification(
-        numero, "series", "set", avant, serie, utilisateur, raison
+        draft, "series", "set", avant, serie, utilisateur, raison
     )
     return serie
 
@@ -108,7 +125,7 @@ def definir_tranches_km(
     avant = list(draft.tranches_km)
     draft.tranches_km = tranches
     referentiel.enregistrer_modification(
-        numero, "tranches_km", "set", avant, tranches, utilisateur, "Mise à jour tranches de km"
+        draft, "tranches_km", "set", avant, tranches, utilisateur, "Mise à jour tranches de km"
     )
     return tranches
 
@@ -124,7 +141,7 @@ def definir_grille_dry_lease(
     avant = list(draft.grille_dry_lease)
     draft.grille_dry_lease = grille
     referentiel.enregistrer_modification(
-        numero, "grille_dry_lease", "set", avant, grille, utilisateur, "Mise à jour grille Dry lease"
+        draft, "grille_dry_lease", "set", avant, grille, utilisateur, "Mise à jour grille Dry lease"
     )
     return grille
 
@@ -140,7 +157,7 @@ def definir_budget_plan(
     avant = list(draft.budget_plan)
     draft.budget_plan = bp
     referentiel.enregistrer_modification(
-        numero, "budget_plan", "set", avant, bp, utilisateur, "Mise à jour BP HM/OM"
+        draft, "budget_plan", "set", avant, bp, utilisateur, "Mise à jour BP HM/OM"
     )
     return bp
 
@@ -157,7 +174,7 @@ def definir_client(
     avant = draft.clients.get(code)
     draft.clients[code] = client
     referentiel.enregistrer_modification(
-        numero, "clients", "set", avant, client, utilisateur, "Mise à jour client"
+        draft, "clients", "set", avant, client, utilisateur, "Mise à jour client"
     )
     return client
 
@@ -174,7 +191,7 @@ def definir_locomotive(
     avant = draft.flotte.get(numero_loco)
     draft.flotte[numero_loco] = locomotive
     referentiel.enregistrer_modification(
-        numero, "flotte", "set", avant, locomotive, utilisateur, "Mise à jour locomotive"
+        draft, "flotte", "set", avant, locomotive, utilisateur, "Mise à jour locomotive"
     )
     return locomotive
 
@@ -190,7 +207,7 @@ def definir_delegations(
     avant = list(draft.delegations)
     draft.delegations = delegations
     referentiel.enregistrer_modification(
-        numero, "delegations", "set", avant, delegations, utilisateur, "Mise à jour délégations"
+        draft, "delegations", "set", avant, delegations, utilisateur, "Mise à jour délégations"
     )
     return delegations
 
@@ -206,7 +223,7 @@ def definir_parametres(
     avant = draft.parametres
     draft.parametres = parametres
     referentiel.enregistrer_modification(
-        numero, "parametres", "set", avant, parametres, utilisateur, "Mise à jour paramètres"
+        draft, "parametres", "set", avant, parametres, utilisateur, "Mise à jour paramètres"
     )
     return parametres
 
@@ -245,6 +262,7 @@ def publier(
 def journal(referentiel: Referentiel = Depends(get_referentiel)) -> list[dict]:
     return [
         {
+            "version_numero": e.version_numero,
             "horodatage": e.horodatage,
             "utilisateur": e.utilisateur,
             "table": e.table,
