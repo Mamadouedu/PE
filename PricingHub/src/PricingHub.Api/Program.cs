@@ -50,6 +50,7 @@ app.UseCors();
 
 app.MapSystemEndpoints();
 app.MapCatalogEndpoints();
+app.MapCampaignEndpoints();
 app.MapQuoteEndpoints();
 app.MapCustomerEndpoints();
 app.MapOpportunityEndpoints();

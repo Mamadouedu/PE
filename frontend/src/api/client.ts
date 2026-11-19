@@ -1,6 +1,13 @@
-import type { ConfigurationOffre, DerogationApi, DetailOffreApi, ErreurApi } from "./types";
+import type {
+  ApprovalRequestResponse,
+  CalculateQuoteRequest,
+  CampaignResponse,
+  ErreurApi,
+  ModelSummaryResponse,
+  QuoteResponse,
+} from "./types";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5067";
 
 export class ApiError extends Error {
   status: number;
@@ -14,67 +21,53 @@ export class ApiError extends Error {
 }
 
 async function lireErreur(reponse: Response): Promise<never> {
-  const corps = (await reponse.json().catch(() => ({ detail: reponse.statusText }))) as ErreurApi;
-  throw new ApiError(reponse.status, corps.detail);
+  const corps = (await reponse.json().catch(() => ({ error: reponse.statusText }))) as ErreurApi;
+  throw new ApiError(reponse.status, corps.error);
 }
 
-export async function chiffrerOffre(config: ConfigurationOffre): Promise<DetailOffreApi> {
-  const reponse = await fetch(`${BASE_URL}/api/v1/prix`, {
+export async function listerModeles(): Promise<ModelSummaryResponse[]> {
+  const reponse = await fetch(`${BASE_URL}/api/models`);
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as ModelSummaryResponse[];
+}
+
+export async function listerCampagnes(): Promise<CampaignResponse[]> {
+  const reponse = await fetch(`${BASE_URL}/api/campaigns`);
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as CampaignResponse[];
+}
+
+export async function chiffrerOffre(requete: CalculateQuoteRequest): Promise<QuoteResponse> {
+  const reponse = await fetch(`${BASE_URL}/api/quotes/calculate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(config),
+    body: JSON.stringify(requete),
   });
 
   if (!reponse.ok) await lireErreur(reponse);
-  return (await reponse.json()) as DetailOffreApi;
+  return (await reponse.json()) as QuoteResponse;
 }
 
-// M4-02 : la justification est obligatoire côté API (elle refuse une chaîne
-// vide) ; `demandeur` identifie le KAM tant qu'il n'y a pas d'authentification.
+// M4-02 : la justification est obligatoire côté API. La dérogation est
+// toujours demandée pour la version COURANTE de l'offre déjà calculée
+// (`quoteId`) — le back-end .NET ne recalcule rien.
 export async function demanderDerogation(
-  configuration: ConfigurationOffre,
+  quoteId: string,
+  requestedBy: string,
   justification: string,
-  demandeur: string,
-): Promise<DerogationApi> {
-  const reponse = await fetch(`${BASE_URL}/api/v1/derogations`, {
+): Promise<ApprovalRequestResponse> {
+  const reponse = await fetch(`${BASE_URL}/api/approval-requests`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Utilisateur": demandeur },
-    body: JSON.stringify({ configuration, justification }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ quoteId, requestedBy, justification }),
   });
 
   if (!reponse.ok) await lireErreur(reponse);
-  return (await reponse.json()) as DerogationApi;
+  return (await reponse.json()) as ApprovalRequestResponse;
 }
 
-export async function obtenirDerogation(id: number): Promise<DerogationApi> {
-  const reponse = await fetch(`${BASE_URL}/api/v1/derogations/${id}`);
+export async function obtenirDerogation(number: number): Promise<ApprovalRequestResponse> {
+  const reponse = await fetch(`${BASE_URL}/api/approval-requests/${number}`);
   if (!reponse.ok) await lireErreur(reponse);
-  return (await reponse.json()) as DerogationApi;
-}
-
-export interface PdfTelecharge {
-  blob: Blob;
-  nomFichier: string;
-}
-
-// M3-05 : le PDF ne montre jamais catalogue/plancher/contrôles, seulement
-// le prix retenu (voir offre_pdf.py côté API) ; `demandeur` identifie le
-// KAM tant qu'il n'y a pas d'authentification.
-export async function telechargerOffrePdf(
-  configuration: ConfigurationOffre,
-  demandeur: string,
-): Promise<PdfTelecharge> {
-  const reponse = await fetch(`${BASE_URL}/api/v1/offres/pdf`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Utilisateur": demandeur },
-    body: JSON.stringify(configuration),
-  });
-
-  if (!reponse.ok) await lireErreur(reponse);
-
-  const entete = reponse.headers.get("content-disposition") ?? "";
-  const correspondance = /filename="([^"]+)"/.exec(entete);
-  const nomFichier = correspondance?.[1] ?? "offre.pdf";
-
-  return { blob: await reponse.blob(), nomFichier };
+  return (await reponse.json()) as ApprovalRequestResponse;
 }

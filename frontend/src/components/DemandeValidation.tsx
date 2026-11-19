@@ -1,43 +1,53 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, demanderDerogation, obtenirDerogation } from "../api/client";
-import type { ConfigurationOffre, DerogationApi } from "../api/types";
+import type { ApprovalRequestResponse, ApprovalStatus } from "../api/types";
 
 const INTERVALLE_SONDAGE_MS = 4000;
 
-const LIBELLE_STATUT: Record<string, string> = {
-  en_attente: "En attente de décision",
-  approuvee: "Approuvée",
-  rejetee: "Rejetée",
+// Les classes CSS (statut-en_attente, etc.) datent du prototype Python —
+// on y ramène les valeurs `ApprovalStatus` de l'API .NET ici plutôt que de
+// réécrire App.css.
+const SLUG_STATUT: Record<ApprovalStatus, string> = {
+  Pending: "en_attente",
+  Approved: "approuvee",
+  Rejected: "rejetee",
+};
+
+const LIBELLE_STATUT: Record<ApprovalStatus, string> = {
+  Pending: "En attente de décision",
+  Approved: "Approuvée",
+  Rejected: "Rejetée",
 };
 
 interface Props {
   libelleNiveau: string;
-  configuration: ConfigurationOffre;
+  quoteId: string;
+  versionNumber: number;
   demandeurEmail: string;
 }
 
-export function DemandeValidation({ libelleNiveau, configuration, demandeurEmail }: Props) {
+export function DemandeValidation({ libelleNiveau, quoteId, versionNumber, demandeurEmail }: Props) {
   const [justification, setJustification] = useState("");
-  const [derogation, setDerogation] = useState<DerogationApi | null>(null);
+  const [derogation, setDerogation] = useState<ApprovalRequestResponse | null>(null);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const intervalleRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    // Remet tout à zéro si la configuration change : une dérogation ne vaut
-    // que pour la configuration exacte qui l'a déclenchée (M4-04).
+    // Remet tout à zéro si l'offre change de version : une dérogation ne
+    // vaut que pour la version exacte qui l'a déclenchée (M4-04).
     setDerogation(null);
     setErreur(null);
-  }, [configuration]);
+  }, [quoteId, versionNumber]);
 
   useEffect(() => {
-    if (!derogation || derogation.statut !== "en_attente") {
+    if (!derogation || derogation.status !== "Pending") {
       if (intervalleRef.current) clearInterval(intervalleRef.current);
       return;
     }
     intervalleRef.current = setInterval(async () => {
       try {
-        const miseAJour = await obtenirDerogation(derogation.id);
+        const miseAJour = await obtenirDerogation(derogation.number);
         setDerogation(miseAJour);
       } catch {
         // on retente au prochain tick ; pas la peine d'alarmer l'utilisateur
@@ -48,17 +58,17 @@ export function DemandeValidation({ libelleNiveau, configuration, demandeurEmail
       if (intervalleRef.current) clearInterval(intervalleRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [derogation?.id, derogation?.statut]);
+  }, [derogation?.number, derogation?.status]);
 
   async function soumettre(evenement: React.FormEvent) {
     evenement.preventDefault();
     setEnCours(true);
     setErreur(null);
     try {
-      const creee = await demanderDerogation(configuration, justification, demandeurEmail);
+      const creee = await demanderDerogation(quoteId, demandeurEmail, justification);
       setDerogation(creee);
     } catch (e) {
-      setErreur(e instanceof ApiError ? String(e.detail) : "Impossible de joindre le moteur de prix.");
+      setErreur(e instanceof ApiError ? String(e.detail) : "Impossible de joindre l'API de pricing.");
     } finally {
       setEnCours(false);
     }
@@ -66,20 +76,20 @@ export function DemandeValidation({ libelleNiveau, configuration, demandeurEmail
 
   if (derogation) {
     return (
-      <div className={`demande-validation statut-${derogation.statut}`}>
-        <p className="demande-statut">{LIBELLE_STATUT[derogation.statut]}</p>
+      <div className={`demande-validation statut-${SLUG_STATUT[derogation.status]}`}>
+        <p className="demande-statut">{LIBELLE_STATUT[derogation.status]}</p>
         <p className="demande-detail">
-          Demandé par {derogation.demandeur}
-          {derogation.validateur_email && <> — en attente de {derogation.validateur_email}</>}
+          Demandé par {derogation.requestedBy}
+          {derogation.validatorEmail && <> — en attente de {derogation.validatorEmail}</>}
         </p>
-        {derogation.statut === "en_attente" && (
+        {derogation.status === "Pending" && (
           <p className="demande-detail aide">Vérification automatique toutes les 4 secondes…</p>
         )}
-        {derogation.date_decision && (
+        {derogation.decidedAt && (
           <p className="demande-detail">
-            Décidé par {derogation.decideur} le{" "}
-            {new Date(derogation.date_decision).toLocaleString("fr-FR")}
-            {derogation.commentaire_decision && <> — « {derogation.commentaire_decision} »</>}
+            Décidé par {derogation.decidedBy} le{" "}
+            {new Date(derogation.decidedAt).toLocaleString("fr-FR")}
+            {derogation.decisionComment && <> — « {derogation.decisionComment} »</>}
           </p>
         )}
       </div>

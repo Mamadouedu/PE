@@ -1,48 +1,22 @@
-import { useState } from "react";
-import { ApiError, telechargerOffrePdf } from "../api/client";
-import type { ConfigurationOffre } from "../api/types";
-
-interface Props {
-  configuration: ConfigurationOffre;
-  demandeurEmail: string;
-}
-
-export function TelechargerPdfButton({ configuration, demandeurEmail }: Props) {
-  const [enCours, setEnCours] = useState(false);
-  const [erreur, setErreur] = useState<string | null>(null);
-
-  async function telecharger() {
-    setEnCours(true);
-    setErreur(null);
-    try {
-      const { blob, nomFichier } = await telechargerOffrePdf(configuration, demandeurEmail);
-      const url = URL.createObjectURL(blob);
-      const lien = document.createElement("a");
-      lien.href = url;
-      lien.download = nomFichier;
-      document.body.appendChild(lien);
-      lien.click();
-      lien.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setErreur(e instanceof ApiError ? String(e.detail) : "Impossible de générer le PDF.");
-    } finally {
-      setEnCours(false);
-    }
-  }
-
+// Le prototype Python générait un PDF (POST /api/v1/offres/pdf, numérotation
+// + journal des offres). Le back-end .NET (PricingHub) ne porte pas encore
+// cette fonctionnalité — ni le module de génération, ni la numérotation
+// séquentielle des offres envoyées. Plutôt que de faire semblant ou de
+// faire disparaître le bouton sans explication, on le désactive avec une
+// mention explicite : voir le journal de la bascule frontend pour le détail
+// de cet écart de périmètre, encore à combler côté API.
+export function TelechargerPdfButton() {
   return (
     <div className="telecharger-pdf">
       <button
         type="button"
         className="bouton-secondaire"
-        onClick={telecharger}
-        disabled={enCours || !demandeurEmail}
-        title={!demandeurEmail ? "Renseignez votre e-mail en haut de page" : undefined}
+        disabled
+        title="Génération de PDF non encore disponible sur le nouveau back-end .NET"
       >
-        {enCours ? "Génération…" : "⭳ Télécharger le PDF"}
+        ⭳ Télécharger le PDF
       </button>
-      {erreur && <p className="erreur-inline">{erreur}</p>}
+      <p className="aide-comparateur">pas encore disponible sur le nouveau back-end</p>
     </div>
   );
 }

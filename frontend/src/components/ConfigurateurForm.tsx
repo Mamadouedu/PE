@@ -1,8 +1,9 @@
-import { useState } from "react";
-import type { Brique, ConfigurationOffre } from "../api/types";
-import { LIBELLE_BRIQUE } from "../api/types";
+import { useEffect, useState } from "react";
+import { listerCampagnes, listerModeles } from "../api/client";
+import type { CalculateQuoteRequest, CampaignResponse, ModelSummaryResponse, PriceLine } from "../api/types";
+import { LIBELLE_PRICE_LINE } from "../api/types";
 
-const TOUTES_BRIQUES: Brique[] = ["DL", "HM", "OM", "ASSURANCE"];
+const TOUTES_LIGNES: PriceLine[] = ["DryLease", "HeavyMaintenance", "OperatingMaintenance", "Insurance"];
 
 function aujourdHui(): string {
   return new Date().toISOString().slice(0, 10);
@@ -10,13 +11,16 @@ function aujourdHui(): string {
 
 interface Props {
   enCours: boolean;
-  onChiffrer: (config: ConfigurationOffre) => void;
+  onChiffrer: (requete: CalculateQuoteRequest) => void;
 }
 
 export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
-  const [clientCode, setClientCode] = useState("CLIENTOK");
-  const [serieCode, setSerieCode] = useState("VECTRON");
-  const [locomotiveNumero, setLocomotiveNumero] = useState("");
+  const [modeles, setModeles] = useState<ModelSummaryResponse[]>([]);
+  const [campagnes, setCampagnes] = useState<CampaignResponse[]>([]);
+  const [chargementReferentiel, setChargementReferentiel] = useState(true);
+
+  const [customerCode, setCustomerCode] = useState("CLIENTOK");
+  const [modelCode, setModelCode] = useState("");
   const [ageDebutAns, setAgeDebutAns] = useState("5");
   const [kmCumulesDebut, setKmCumulesDebut] = useState("600000");
   const [hm8Realisee, setHm8Realisee] = useState(false);
@@ -25,21 +29,34 @@ export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
   const [dureeMois, setDureeMois] = useState("24");
   const [quantite, setQuantite] = useState("1");
   const [dateDebut, setDateDebut] = useState(aujourdHui());
-  const [campagne, setCampagne] = useState(false);
-  const [briquesIncluses, setBriquesIncluses] = useState<Set<Brique>>(
-    new Set(TOUTES_BRIQUES),
-  );
-  const [prixNegocies, setPrixNegocies] = useState<Partial<Record<Brique, string>>>({});
+  const [campagneCode, setCampagneCode] = useState("");
+  const [lignesIncluses, setLignesIncluses] = useState<Set<PriceLine>>(new Set(TOUTES_LIGNES));
+  const [prixNegocies, setPrixNegocies] = useState<Partial<Record<PriceLine, string>>>({});
 
-  const aLocomotive = locomotiveNumero.trim().length > 0;
+  useEffect(() => {
+    let annule = false;
+    Promise.all([listerModeles(), listerCampagnes()])
+      .then(([listeModeles, listeCampagnes]) => {
+        if (annule) return;
+        setModeles(listeModeles);
+        setCampagnes(listeCampagnes);
+        if (listeModeles.length > 0) setModelCode(listeModeles[0].modelCode);
+      })
+      .finally(() => {
+        if (!annule) setChargementReferentiel(false);
+      });
+    return () => {
+      annule = true;
+    };
+  }, []);
 
-  function basculerBrique(brique: Brique) {
-    setBriquesIncluses((courant) => {
+  function basculerLigne(ligne: PriceLine) {
+    setLignesIncluses((courant) => {
       const suivant = new Set(courant);
-      if (suivant.has(brique)) {
-        suivant.delete(brique);
+      if (suivant.has(ligne)) {
+        suivant.delete(ligne);
       } else {
-        suivant.add(brique);
+        suivant.add(ligne);
       }
       return suivant;
     });
@@ -48,116 +65,109 @@ export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
   function soumettre(evenement: React.FormEvent) {
     evenement.preventDefault();
 
-    const negocies: Partial<Record<Brique, number>> = {};
-    for (const brique of TOUTES_BRIQUES) {
-      const valeur = prixNegocies[brique];
+    const negocies: Partial<Record<PriceLine, number>> = {};
+    for (const ligne of TOUTES_LIGNES) {
+      const valeur = prixNegocies[ligne];
       if (valeur !== undefined && valeur.trim() !== "") {
-        negocies[brique] = Number(valeur);
+        negocies[ligne] = Number(valeur);
       }
     }
 
-    const config: ConfigurationOffre = {
-      client_code: clientCode.trim(),
-      serie_code: serieCode.trim(),
-      locomotive_numero: aLocomotive ? locomotiveNumero.trim() : null,
-      km_annuel: Number(kmAnnuel),
-      duree_mois: Number(dureeMois),
-      quantite: Number(quantite),
-      date_debut: dateDebut,
-      briques_incluses: Array.from(briquesIncluses),
-      prix_negocies: negocies,
-      campagne,
-      ...(aLocomotive
-        ? {}
-        : {
-            age_debut_ans: Number(ageDebutAns),
-            km_cumules_debut: Number(kmCumulesDebut),
-            hm_8_realisee: hm8Realisee,
-            hm_16_realisee: hm16Realisee,
-          }),
+    const requete: CalculateQuoteRequest = {
+      customerCode: customerCode.trim(),
+      modelCode,
+      annualMileageKm: Number(kmAnnuel),
+      durationMonths: Number(dureeMois),
+      quantity: Number(quantite),
+      startDate: dateDebut,
+      ageAtStartYears: Number(ageDebutAns),
+      cumulativeMileageAtStartKm: Number(kmCumulesDebut),
+      heavyMaintenance8Done: hm8Realisee,
+      heavyMaintenance16Done: hm16Realisee,
+      includedLines: Array.from(lignesIncluses),
+      negotiatedPrices: negocies,
+      campaignCode: campagneCode.trim() === "" ? null : campagneCode,
     };
 
-    onChiffrer(config);
+    onChiffrer(requete);
   }
 
   return (
     <form className="configurateur-form" onSubmit={soumettre}>
       <fieldset>
-        <legend>Client et série</legend>
+        <legend>Client et modèle</legend>
 
         <label>
           Client
           <input
-            value={clientCode}
-            onChange={(e) => setClientCode(e.target.value)}
+            value={customerCode}
+            onChange={(e) => setCustomerCode(e.target.value)}
             placeholder="ex. CLIENTOK"
             required
           />
         </label>
 
         <label>
-          Série
-          <input
-            value={serieCode}
-            onChange={(e) => setSerieCode(e.target.value)}
-            placeholder="ex. VECTRON"
-            required
-          />
+          Modèle
+          {modeles.length > 0 ? (
+            <select value={modelCode} onChange={(e) => setModelCode(e.target.value)} required>
+              {modeles.map((m) => (
+                <option key={m.modelCode} value={m.modelCode}>
+                  {m.name} ({m.modelCode})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              value={modelCode}
+              onChange={(e) => setModelCode(e.target.value)}
+              placeholder="ex. VECTRON"
+              disabled={chargementReferentiel}
+              required
+            />
+          )}
         </label>
 
-        <label>
-          Locomotive de la flotte (optionnel)
-          <input
-            value={locomotiveNumero}
-            onChange={(e) => setLocomotiveNumero(e.target.value)}
-            placeholder="numéro, ou laisser vide"
-          />
-        </label>
-
-        {!aLocomotive && (
-          <div className="sous-champs">
-            <p className="aide">
-              Sans locomotive affectée : âge et kilométrage de départ saisis à la main.
-            </p>
-            <label>
-              Âge au début (années)
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={ageDebutAns}
-                onChange={(e) => setAgeDebutAns(e.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Km cumulés au début
-              <input
-                type="number"
-                min="0"
-                value={kmCumulesDebut}
-                onChange={(e) => setKmCumulesDebut(e.target.value)}
-                required
-              />
-            </label>
-            <label className="case-a-cocher">
-              <input
-                type="checkbox"
-                checked={hm8Realisee}
-                onChange={(e) => setHm8Realisee(e.target.checked)}
-              />
-              HM 8 ans déjà réalisée
-            </label>
-            <label className="case-a-cocher">
-              <input
-                type="checkbox"
-                checked={hm16Realisee}
-                onChange={(e) => setHm16Realisee(e.target.checked)}
-              />
-              HM 16 ans déjà réalisée
-            </label>
-          </div>
-        )}
+        <div className="sous-champs">
+          <p className="aide">Âge et kilométrage de départ (saisis à la main).</p>
+          <label>
+            Âge au début (années)
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={ageDebutAns}
+              onChange={(e) => setAgeDebutAns(e.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Km cumulés au début
+            <input
+              type="number"
+              min="0"
+              value={kmCumulesDebut}
+              onChange={(e) => setKmCumulesDebut(e.target.value)}
+              required
+            />
+          </label>
+          <label className="case-a-cocher">
+            <input
+              type="checkbox"
+              checked={hm8Realisee}
+              onChange={(e) => setHm8Realisee(e.target.checked)}
+            />
+            HM 8 ans déjà réalisée
+          </label>
+          <label className="case-a-cocher">
+            <input
+              type="checkbox"
+              checked={hm16Realisee}
+              onChange={(e) => setHm16Realisee(e.target.checked)}
+            />
+            HM 16 ans déjà réalisée
+          </label>
+        </div>
       </fieldset>
 
       <fieldset>
@@ -208,27 +218,30 @@ export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
           />
         </label>
 
-        <label className="case-a-cocher">
-          <input
-            type="checkbox"
-            checked={campagne}
-            onChange={(e) => setCampagne(e.target.checked)}
-          />
-          Offre rattachée à une campagne commerciale
+        <label>
+          Campagne commerciale (optionnel)
+          <select value={campagneCode} onChange={(e) => setCampagneCode(e.target.value)}>
+            <option value="">Aucune</option>
+            {campagnes.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name} ({c.code})
+              </option>
+            ))}
+          </select>
         </label>
       </fieldset>
 
       <fieldset>
         <legend>Briques incluses</legend>
         <div className="briques-incluses">
-          {TOUTES_BRIQUES.map((brique) => (
-            <label key={brique} className="case-a-cocher">
+          {TOUTES_LIGNES.map((ligne) => (
+            <label key={ligne} className="case-a-cocher">
               <input
                 type="checkbox"
-                checked={briquesIncluses.has(brique)}
-                onChange={() => basculerBrique(brique)}
+                checked={lignesIncluses.has(ligne)}
+                onChange={() => basculerLigne(ligne)}
               />
-              {LIBELLE_BRIQUE[brique]}
+              {LIBELLE_PRICE_LINE[ligne]}
             </label>
           ))}
         </div>
@@ -237,18 +250,18 @@ export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
       <fieldset>
         <legend>Prix négociés (optionnel — vide = prix catalogue)</legend>
         <div className="prix-negocies">
-          {TOUTES_BRIQUES.map((brique) => (
-            <label key={brique}>
-              {LIBELLE_BRIQUE[brique]}
+          {TOUTES_LIGNES.map((ligne) => (
+            <label key={ligne}>
+              {LIBELLE_PRICE_LINE[ligne]}
               <input
                 type="number"
                 min="0"
                 step="0.01"
-                value={prixNegocies[brique] ?? ""}
+                value={prixNegocies[ligne] ?? ""}
                 onChange={(e) =>
-                  setPrixNegocies((courant) => ({ ...courant, [brique]: e.target.value }))
+                  setPrixNegocies((courant) => ({ ...courant, [ligne]: e.target.value }))
                 }
-                disabled={!briquesIncluses.has(brique)}
+                disabled={!lignesIncluses.has(ligne)}
                 placeholder="catalogue"
               />
             </label>
@@ -256,7 +269,7 @@ export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
         </div>
       </fieldset>
 
-      <button type="submit" disabled={enCours}>
+      <button type="submit" disabled={enCours || chargementReferentiel || !modelCode}>
         {enCours ? "Calcul en cours…" : "Chiffrer"}
       </button>
     </form>

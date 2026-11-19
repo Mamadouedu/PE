@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { libelleScenario } from "./scenario";
-import type { ConfigurationOffre } from "./api/types";
+import type { CalculateQuoteRequest } from "./api/types";
 
-function configurationDeTest(partiel: Partial<ConfigurationOffre> = {}): ConfigurationOffre {
+function requeteDeTest(partiel: Partial<CalculateQuoteRequest> = {}): CalculateQuoteRequest {
   return {
-    client_code: "CLIENTOK",
-    serie_code: "VECTRON",
-    km_annuel: 120_000,
-    duree_mois: 24,
-    quantite: 1,
-    date_debut: "2026-01-01",
-    briques_incluses: ["DL", "HM", "OM", "ASSURANCE"],
-    prix_negocies: {},
+    customerCode: "CLIENTOK",
+    modelCode: "VECTRON",
+    annualMileageKm: 120_000,
+    durationMonths: 24,
+    quantity: 1,
+    startDate: "2026-01-01",
+    ageAtStartYears: 5,
+    cumulativeMileageAtStartKm: 600_000,
+    heavyMaintenance8Done: false,
+    heavyMaintenance16Done: false,
+    includedLines: ["DryLease", "HeavyMaintenance", "OperatingMaintenance", "Insurance"],
+    negotiatedPrices: {},
+    campaignCode: null,
     ...partiel,
   };
 }
@@ -22,12 +27,12 @@ function configurationDeTest(partiel: Partial<ConfigurationOffre> = {}): Configu
 const km = (n: number) => n.toLocaleString("fr-FR");
 
 describe("libelleScenario", () => {
-  it("résume la série, la durée et le kilométrage", () => {
-    expect(libelleScenario(configurationDeTest())).toBe(`VECTRON · 24 mois · ${km(120_000)} km/an`);
+  it("résume le modèle, la durée et le kilométrage", () => {
+    expect(libelleScenario(requeteDeTest())).toBe(`VECTRON · 24 mois · ${km(120_000)} km/an`);
   });
 
-  it("suit les changements de configuration", () => {
-    const config = configurationDeTest({ serie_code: "TRAXX", duree_mois: 36, km_annuel: 160_000 });
-    expect(libelleScenario(config)).toBe(`TRAXX · 36 mois · ${km(160_000)} km/an`);
+  it("suit les changements de requête", () => {
+    const requete = requeteDeTest({ modelCode: "TRAXX", durationMonths: 36, annualMileageKm: 160_000 });
+    expect(libelleScenario(requete)).toBe(`TRAXX · 36 mois · ${km(160_000)} km/an`);
   });
 });

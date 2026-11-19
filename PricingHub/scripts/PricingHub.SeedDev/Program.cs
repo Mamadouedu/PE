@@ -1,12 +1,14 @@
 ﻿// Peuple la base de dev (pricinghub_dev) avec un jeu de données minimal mais
 // cohérent — équivalent .NET de scripts/seed_dev.py côté Python : la série
-// VECTRON du cahier des charges, un référentiel pricing publié, un client.
-// Idempotent : ne recrée rien si VECTRON existe déjà.
+// VECTRON du cahier des charges, un référentiel pricing publié, un client,
+// une campagne commerciale ouverte (PROMO2026, pour le frontend).
+// Idempotent : chaque partie vérifie sa propre existence avant de la créer.
 
 using Microsoft.EntityFrameworkCore;
 using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.Domain.Catalog.ProductAggregate;
 using PricingHub.Domain.Catalog.SeriesAggregate;
+using PricingHub.Domain.Pricing.CampaignAggregate;
 using PricingHub.Domain.Pricing.PriceBookAggregate;
 using PricingHub.Domain.Sales.CustomerAggregate;
 using PricingHub.Infrastructure.Persistence;
@@ -24,12 +26,35 @@ var productCode = ProductCode.Of("LOCOMOTIVE");
 var seriesCode = SeriesCode.Of("VECTRON");
 var modelCode = ModelCode.Of("VECTRON");
 
-if (await db.Models.AnyAsync(m => m.Id == modelCode))
+var modelExists = await db.Models.AnyAsync(m => m.Id == modelCode);
+if (modelExists)
 {
-    Console.WriteLine("VECTRON existe déjà — rien à faire.");
-    return;
+    Console.WriteLine("VECTRON existe déjà — catalogue/référentiel/client non recréés.");
+}
+else
+{
+    await SeedCatalogAsync(db, productCode, seriesCode, modelCode);
 }
 
+var campaignCode = CampaignCode.Of("PROMO2026");
+if (await db.Campaigns.AnyAsync(c => c.Id == campaignCode))
+{
+    Console.WriteLine("Campagne PROMO2026 existe déjà — non recréée.");
+}
+else
+{
+    var campaign = Campaign.Create(
+        campaignCode, "Campagne promotionnelle 2026",
+        startDate: new DateOnly(2026, 1, 1), endDate: new DateOnly(2026, 12, 31), maxDurationMonths: 36).Value;
+    db.Campaigns.Add(campaign);
+    await db.SaveChangesAsync();
+    Console.WriteLine("Campagne PROMO2026 créée.");
+}
+
+return;
+
+static async Task SeedCatalogAsync(PricingHubDbContext db, ProductCode productCode, SeriesCode seriesCode, ModelCode modelCode)
+{
 var product = Product.Create(productCode, "Locomotive").Value;
 var series = Series.Create(seriesCode, productCode, "Vectron").Value;
 var model = Model.Create(
@@ -73,3 +98,4 @@ await db.SaveChangesAsync();
 
 Console.WriteLine("Référentiel de dev créé : produit LOCOMOTIVE, série VECTRON, modèle VECTRON,");
 Console.WriteLine("référentiel pricing n°1 publié, client CLIENTOK.");
+}
