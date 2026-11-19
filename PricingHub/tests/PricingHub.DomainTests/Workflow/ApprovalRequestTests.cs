@@ -3,6 +3,7 @@ using PricingHub.Domain.Pricing.PriceBookAggregate;
 using PricingHub.Domain.Sales.CustomerAggregate;
 using PricingHub.Domain.Sales.QuoteAggregate;
 using PricingHub.Domain.Workflow.ApprovalRequestAggregate;
+using PricingHub.Domain.Workflow.DelegationAggregate;
 using PricingHub.SharedKernel;
 
 namespace PricingHub.DomainTests.Workflow;
@@ -10,18 +11,25 @@ namespace PricingHub.DomainTests.Workflow;
 /// <summary>Porté depuis <c>tests/test_derogation.py</c> — section 7, M4.</summary>
 public class ApprovalRequestTests
 {
-    private static Result<ApprovalRequest> CreateRequest(int validationLevel, string? validatorEmail, string justification = "négociation") =>
-        ApprovalRequest.Request(
+    private static Result<ApprovalRequest> CreateRequest(int validationLevel, string? validatorEmail, string justification = "négociation")
+    {
+        var delegations = validatorEmail is null
+            ? Array.Empty<Delegation>()
+            : new[] { Delegation.Create(ValidationLevel.Of(validationLevel), "Validateur test", validatorEmail).Value };
+
+        return ApprovalRequest.Request(
             ApprovalRequestId.Of(1),
             QuoteId.New(),
+            QuoteVersionNumber.First,
             PriceBookNumber.Of(1),
             CustomerCode.Of("CLIENTOK"),
             ModelCode.Of("VECTRON"),
             validationLevel,
             Money.Eur(5_000m),
-            validatorEmail,
+            delegations,
             "kam@akiem.com",
             justification);
+    }
 
     [Fact]
     public void RefuseUneDerogationPourUneOffreDansLesRegles()
@@ -44,6 +52,18 @@ public class ApprovalRequestTests
         Assert.Equal("kam@akiem.com", request.RequestedBy);
         Assert.Equal("remise fidélité", request.Justification);
         Assert.Null(request.DecidedAt);
+    }
+
+    [Fact]
+    public void SansDelegationConfiguree_ValidatorEmailResteNull()
+    {
+        var result = ApprovalRequest.Request(
+            ApprovalRequestId.Of(1), QuoteId.New(), QuoteVersionNumber.First, PriceBookNumber.Of(1),
+            CustomerCode.Of("CLIENTOK"), ModelCode.Of("VECTRON"), validationLevel: 1, Money.Eur(5_000m),
+            delegations: Array.Empty<Delegation>(), requestedBy: "kam@akiem.com", justification: "sans délégation configurée");
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.Value.ValidatorEmail);
     }
 
     [Fact]

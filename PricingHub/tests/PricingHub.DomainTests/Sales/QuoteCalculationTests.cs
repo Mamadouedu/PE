@@ -31,7 +31,7 @@ public class QuoteCalculationTests
             Duration.FromMonths(24),
             quantity: 1,
             startDate: new DateOnly(2026, 1, 1),
-            isCampaign: false).Value;
+            campaignCode: null).Value;
 
         quote.AssignManualFleetData(
             ageAtStartYears: 5m,
@@ -107,7 +107,7 @@ public class QuoteCalculationTests
     {
         var quote = Quote.CreateDraft(
             QuoteId.New(), CustomerCode.Of("CLIENTOK"), ModelCode.Of("VECTRON"),
-            Mileage.FromKilometers(120_000m), Duration.FromMonths(24), 1, new DateOnly(2026, 1, 1), false).Value;
+            Mileage.FromKilometers(120_000m), Duration.FromMonths(24), 1, new DateOnly(2026, 1, 1)).Value;
 
         quote.AssignManualFleetData(5m, Mileage.FromKilometers(600_000m), false, false);
 

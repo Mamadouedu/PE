@@ -3,6 +3,7 @@ using PricingHub.Domain.Common;
 using PricingHub.Domain.Pricing.PriceBookAggregate;
 using PricingHub.Domain.Sales.CustomerAggregate;
 using PricingHub.Domain.Sales.QuoteAggregate;
+using PricingHub.Domain.Workflow.DelegationAggregate;
 using PricingHub.SharedKernel;
 
 namespace PricingHub.Domain.Workflow.ApprovalRequestAggregate;
@@ -15,11 +16,13 @@ namespace PricingHub.Domain.Workflow.ApprovalRequestAggregate;
 /// registre central (M4-05). Équivalent du modèle Python <c>Derogation</c>.
 ///
 /// Gèle la configuration exacte qui l'a déclenchée au moment de la
-/// demande : une approbation reste liée à ce montant et à ce niveau
-/// précis, jamais à « la dernière version » de l'offre — elle devient
-/// caduque dès que le KAM modifie quoi que ce soit au <see cref="Quote"/>
-/// (M4-04). Vérifier cette correspondance avant l'envoi effectif d'une
-/// offre est la responsabilité d'un service applicatif, pas de cet agrégat.
+/// demande — y compris <see cref="QuoteVersion"/>, le numéro de version
+/// précis de l'offre (pas seulement son identité) : une approbation reste
+/// liée à cette version-là, jamais à « la dernière version » de l'offre.
+/// Puisqu'éditer une <c>Quote</c> après calcul ouvre toujours une nouvelle
+/// version (voir <c>Quote.EnsureEditableVersion</c>), toute modification
+/// du KAM rend mécaniquement caduque l'approbation de l'ancienne version
+/// (M4-04) sans qu'il soit besoin de comparer des champs un à un.
 /// </summary>
 public sealed class ApprovalRequest : AggregateRoot<ApprovalRequestId>
 {
@@ -29,6 +32,7 @@ public sealed class ApprovalRequest : AggregateRoot<ApprovalRequestId>
     public string Justification { get; private set; } = string.Empty;
 
     public QuoteId QuoteId { get; private set; }
+    public QuoteVersionNumber QuoteVersion { get; private set; }
     public PriceBookNumber PriceBookNumber { get; private set; }
     public CustomerCode CustomerCode { get; private set; }
     public ModelCode ModelCode { get; private set; }
@@ -49,6 +53,7 @@ public sealed class ApprovalRequest : AggregateRoot<ApprovalRequestId>
     private ApprovalRequest(
         ApprovalRequestId id,
         QuoteId quoteId,
+        QuoteVersionNumber quoteVersion,
         PriceBookNumber priceBookNumber,
         CustomerCode customerCode,
         ModelCode modelCode,
@@ -60,6 +65,7 @@ public sealed class ApprovalRequest : AggregateRoot<ApprovalRequestId>
         : base(id)
     {
         QuoteId = quoteId;
+        QuoteVersion = quoteVersion;
         PriceBookNumber = priceBookNumber;
         CustomerCode = customerCode;
         ModelCode = modelCode;
@@ -72,18 +78,25 @@ public sealed class ApprovalRequest : AggregateRoot<ApprovalRequestId>
         RequestedAt = DateTimeOffset.UtcNow;
     }
 
-    /// <summary>Crée la demande. Échoue si l'offre est déjà dans les
+    /// <summary>Crée la demande et résout le validateur délégué pour le
+    /// niveau calculé (<paramref name="delegations"/> — la table
+    /// Délégation, section 8.3). Échoue si l'offre est déjà dans les
     /// règles (niveau 0 — équivalent de <c>DerogationNonNecessaire</c>) ou
-    /// si la justification est absente (M4-02).</summary>
+    /// si la justification est absente (M4-02). L'absence de délégation
+    /// configurée pour le niveau requis n'empêche pas la demande (anomalie
+    /// de référentiel à corriger côté administration, pas une raison de
+    /// bloquer le KAM) : <see cref="ValidatorEmail"/> reste alors
+    /// <c>null</c>.</summary>
     public static Result<ApprovalRequest> Request(
         ApprovalRequestId id,
         QuoteId quoteId,
+        QuoteVersionNumber quoteVersion,
         PriceBookNumber priceBookNumber,
         CustomerCode customerCode,
         ModelCode modelCode,
         int validationLevel,
         Money monthlyRetainedAmount,
-        string? validatorEmail,
+        IReadOnlyCollection<Delegation> delegations,
         string requestedBy,
         string justification)
     {
@@ -103,11 +116,13 @@ public sealed class ApprovalRequest : AggregateRoot<ApprovalRequestId>
             return Result.Failure<ApprovalRequest>("Le demandeur est obligatoire.");
         }
 
-        var request = new ApprovalRequest(
-            id, quoteId, priceBookNumber, customerCode, modelCode, validationLevel, monthlyRetainedAmount,
-            validatorEmail, requestedBy, justification);
+        var validator = DelegationLookup.ValidatorFor(delegations, validationLevel);
 
-        request.Raise(new ApprovalRequested(id, validationLevel, validatorEmail));
+        var request = new ApprovalRequest(
+            id, quoteId, quoteVersion, priceBookNumber, customerCode, modelCode, validationLevel, monthlyRetainedAmount,
+            validator?.Email, requestedBy, justification);
+
+        request.Raise(new ApprovalRequested(id, validationLevel, validator?.Email));
         return Result.Success(request);
     }
 
