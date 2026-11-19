@@ -1,0 +1,29 @@
+@PricingHub.Api_HostAddress = http://localhost:5067
+
+GET {{PricingHub.Api_HostAddress}}/health
+Accept: application/json
+
+###
+
+GET {{PricingHub.Api_HostAddress}}/api/models
+Accept: application/json
+
+###
+
+POST {{PricingHub.Api_HostAddress}}/api/quotes/calculate
+Content-Type: application/json
+
+{
+  "customerCode": "CLIENTOK",
+  "modelCode": "VECTRON",
+  "annualMileageKm": 120000,
+  "durationMonths": 24,
+  "quantity": 1,
+  "startDate": "2026-01-01",
+  "ageAtStartYears": 5,
+  "cumulativeMileageAtStartKm": 600000,
+  "heavyMaintenance8Done": false,
+  "heavyMaintenance16Done": false
+}
+
+###
