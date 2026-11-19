@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
-using PricingHub.Api.Contracts;
+using PricingHub.Api.Endpoints;
 using PricingHub.Api.Services;
 using PricingHub.Infrastructure.Persistence;
 
@@ -48,40 +48,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors();
 
-app.MapGet("/health", async (PricingHubDbContext db, CancellationToken cancellationToken) =>
-{
-    var canConnect = await db.Database.CanConnectAsync(cancellationToken);
-    return canConnect
-        ? Results.Ok(new { status = "ok", database = "reachable" })
-        : Results.Json(new { status = "degraded", database = "unreachable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
-})
-.WithName("GetHealth")
-.WithOpenApi();
-
-app.MapGet("/api/models", async (PricingHubDbContext db, CancellationToken cancellationToken) =>
-{
-    // Matérialise d'abord (ToListAsync), puis projette en mémoire : accéder à
-    // .Id.Value / .SeriesCode.Value sur des propriétés converties (HasConversion)
-    // à l'intérieur d'un Select traduit en SQL n'est pas garanti côté EF Core.
-    var models = await db.Models.ToListAsync(cancellationToken);
-    var response = models
-        .Select(m => new ModelSummaryResponse(m.Id.Value, m.SeriesCode.Value, m.Name, m.NewValue.Amount))
-        .ToList();
-    return Results.Ok(response);
-})
-.WithName("ListModels")
-.WithOpenApi();
-
-app.MapPost("/api/quotes/calculate", async (
-    CalculateQuoteRequest request, QuoteCalculationService service, CancellationToken cancellationToken) =>
-{
-    var result = await service.CalculateAsync(request, cancellationToken);
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.UnprocessableEntity(new { error = result.Error });
-})
-.WithName("CalculateQuote")
-.WithOpenApi();
+app.MapSystemEndpoints();
+app.MapCatalogEndpoints();
+app.MapQuoteEndpoints();
+app.MapCustomerEndpoints();
+app.MapOpportunityEndpoints();
+app.MapDelegationEndpoints();
+app.MapApprovalRequestEndpoints();
+app.MapScenarioComparisonEndpoints();
 
 app.Run();
 

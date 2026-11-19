@@ -31,4 +31,6 @@ public sealed record QuoteResponse(
     decimal GlobalDiscount,
     decimal MonthlyReferenceCost,
     int ValidationLevel,
-    IReadOnlyList<string> ValidationLevelReasons);
+    IReadOnlyList<string> ValidationLevelReasons,
+    IReadOnlyList<ControlResultResponse> Controls,
+    bool AllControlsOk);

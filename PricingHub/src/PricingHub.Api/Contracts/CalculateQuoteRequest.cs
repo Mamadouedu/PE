@@ -20,4 +20,5 @@ public sealed record CalculateQuoteRequest(
     bool HeavyMaintenance8Done,
     bool HeavyMaintenance16Done,
     IReadOnlyList<PriceLine>? IncludedLines,
-    IReadOnlyDictionary<PriceLine, decimal>? NegotiatedPrices);
+    IReadOnlyDictionary<PriceLine, decimal>? NegotiatedPrices,
+    string? CampaignCode);
