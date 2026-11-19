@@ -1,4 +1,4 @@
-using PricingHub.Domain.Catalog.SeriesAggregate;
+using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.Domain.Pricing;
 using PricingHub.Domain.Pricing.Calculations;
 using PricingHub.Domain.Pricing.PriceBookAggregate;
@@ -26,7 +26,7 @@ public class QuoteCalculationTests
         var quote = Quote.CreateDraft(
             QuoteId.New(),
             CustomerCode.Of("CLIENTOK"),
-            SeriesCode.Of("VECTRON"),
+            ModelCode.Of("VECTRON"),
             Mileage.FromKilometers(120_000m),
             Duration.FromMonths(24),
             quantity: 1,
@@ -44,29 +44,29 @@ public class QuoteCalculationTests
         var mileageEnd = Mileage.FromKilometers(quote.CumulativeMileageAtStart.Kilometers + quote.AnnualMileage.Kilometers * durationYears);
 
         var vrStart = ResidualValueCalculator.Calculate(
-            VectronFixture.Series, VectronFixture.Parameters, quote.AgeAtStartYears, quote.CumulativeMileageAtStart, false, false);
+            VectronFixture.Model, VectronFixture.Parameters, quote.AgeAtStartYears, quote.CumulativeMileageAtStart, false, false);
         var vrEnd = ResidualValueCalculator.Calculate(
-            VectronFixture.Series, VectronFixture.Parameters, ageEnd, mileageEnd, false, false);
+            VectronFixture.Model, VectronFixture.Parameters, ageEnd, mileageEnd, false, false);
         var vrAverage = Money.Eur((vrStart.Amount + vrEnd.Amount) / 2m);
 
         Assert.Equal(1_700_000.0m, vrStart.Amount, 2);
         Assert.Equal(1_580_000.0m, vrEnd.Amount, 2);
 
         var additionalMileagePrice = AdditionalMileageCalculator.CalculatePerKilometerPrice(
-            VectronFixture.Series, VectronFixture.BracketA, VectronFixture.Parameters.AdditionalMileageSurcharge);
+            VectronFixture.Model, VectronFixture.BracketA, VectronFixture.Parameters.AdditionalMileageSurcharge);
 
         var pricedLines = new Dictionary<PriceLine, PricedLine>
         {
             [PriceLine.DryLease] = DryLeaseCalculator.Calculate(
                 VectronFixture.DryLeaseGrid, VectronFixture.BracketA, VectronFixture.Parameters.MaximumDiscount),
             [PriceLine.HeavyMaintenance] = HeavyMaintenanceCalculator.Calculate(
-                VectronFixture.Series, quote.AnnualMileage, VectronFixture.BracketA, VectronFixture.BudgetPlanA,
+                VectronFixture.Model, quote.AnnualMileage, VectronFixture.BracketA, VectronFixture.BudgetPlanA,
                 VectronFixture.Parameters.HeavyMaintenanceMargin),
             [PriceLine.OperatingMaintenance] = OperatingMaintenanceCalculator.Calculate(
-                VectronFixture.Series, quote.AnnualMileage, VectronFixture.BracketA, VectronFixture.BudgetPlanA,
+                VectronFixture.Model, quote.AnnualMileage, VectronFixture.BracketA, VectronFixture.BudgetPlanA,
                 VectronFixture.Parameters.OperatingMaintenanceMargin),
             [PriceLine.Insurance] = InsuranceCalculator.Calculate(
-                VectronFixture.Series, vrAverage, VectronFixture.Parameters.InsuranceMargin),
+                VectronFixture.Model, vrAverage, VectronFixture.Parameters.InsuranceMargin),
         };
 
         var result = quote.ApplyCalculation(
@@ -106,7 +106,7 @@ public class QuoteCalculationTests
     public void RemiseAuDelaDuSeuilKam_DeclencheLeNiveau1()
     {
         var quote = Quote.CreateDraft(
-            QuoteId.New(), CustomerCode.Of("CLIENTOK"), SeriesCode.Of("VECTRON"),
+            QuoteId.New(), CustomerCode.Of("CLIENTOK"), ModelCode.Of("VECTRON"),
             Mileage.FromKilometers(120_000m), Duration.FromMonths(24), 1, new DateOnly(2026, 1, 1), false).Value;
 
         quote.AssignManualFleetData(5m, Mileage.FromKilometers(600_000m), false, false);
@@ -115,18 +115,18 @@ public class QuoteCalculationTests
         // sans passer sous aucun plancher ni sous le coût de référence.
         quote.NegotiatePrice(PriceLine.DryLease, Money.Eur(18_500m));
 
-        var vrStart = ResidualValueCalculator.Calculate(VectronFixture.Series, VectronFixture.Parameters, 5m, Mileage.FromKilometers(600_000m), false, false);
-        var vrEnd = ResidualValueCalculator.Calculate(VectronFixture.Series, VectronFixture.Parameters, 7m, Mileage.FromKilometers(840_000m), false, false);
+        var vrStart = ResidualValueCalculator.Calculate(VectronFixture.Model, VectronFixture.Parameters, 5m, Mileage.FromKilometers(600_000m), false, false);
+        var vrEnd = ResidualValueCalculator.Calculate(VectronFixture.Model, VectronFixture.Parameters, 7m, Mileage.FromKilometers(840_000m), false, false);
         var vrAverage = Money.Eur((vrStart.Amount + vrEnd.Amount) / 2m);
         var additionalMileagePrice = AdditionalMileageCalculator.CalculatePerKilometerPrice(
-            VectronFixture.Series, VectronFixture.BracketA, VectronFixture.Parameters.AdditionalMileageSurcharge);
+            VectronFixture.Model, VectronFixture.BracketA, VectronFixture.Parameters.AdditionalMileageSurcharge);
 
         var pricedLines = new Dictionary<PriceLine, PricedLine>
         {
             [PriceLine.DryLease] = DryLeaseCalculator.Calculate(VectronFixture.DryLeaseGrid, VectronFixture.BracketA, VectronFixture.Parameters.MaximumDiscount),
-            [PriceLine.HeavyMaintenance] = HeavyMaintenanceCalculator.Calculate(VectronFixture.Series, quote.AnnualMileage, VectronFixture.BracketA, VectronFixture.BudgetPlanA, VectronFixture.Parameters.HeavyMaintenanceMargin),
-            [PriceLine.OperatingMaintenance] = OperatingMaintenanceCalculator.Calculate(VectronFixture.Series, quote.AnnualMileage, VectronFixture.BracketA, VectronFixture.BudgetPlanA, VectronFixture.Parameters.OperatingMaintenanceMargin),
-            [PriceLine.Insurance] = InsuranceCalculator.Calculate(VectronFixture.Series, vrAverage, VectronFixture.Parameters.InsuranceMargin),
+            [PriceLine.HeavyMaintenance] = HeavyMaintenanceCalculator.Calculate(VectronFixture.Model, quote.AnnualMileage, VectronFixture.BracketA, VectronFixture.BudgetPlanA, VectronFixture.Parameters.HeavyMaintenanceMargin),
+            [PriceLine.OperatingMaintenance] = OperatingMaintenanceCalculator.Calculate(VectronFixture.Model, quote.AnnualMileage, VectronFixture.BracketA, VectronFixture.BudgetPlanA, VectronFixture.Parameters.OperatingMaintenanceMargin),
+            [PriceLine.Insurance] = InsuranceCalculator.Calculate(VectronFixture.Model, vrAverage, VectronFixture.Parameters.InsuranceMargin),
         };
 
         quote.ApplyCalculation(PriceBookNumber.Of(1), VectronFixture.Parameters, vrStart, vrEnd, additionalMileagePrice, pricedLines, preSendControlsFailed: false);

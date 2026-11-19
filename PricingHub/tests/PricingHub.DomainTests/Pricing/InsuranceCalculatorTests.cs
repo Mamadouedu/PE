@@ -12,12 +12,12 @@ public class InsuranceCalculatorTests
     {
         // VR début/fin pour config_base (âge 5→7 ans, km 600 000→840 000 sur 24 mois).
         var vrStart = ResidualValueCalculator.Calculate(
-            VectronFixture.Series, VectronFixture.Parameters, 5m, Mileage.FromKilometers(600_000m), false, false);
+            VectronFixture.Model, VectronFixture.Parameters, 5m, Mileage.FromKilometers(600_000m), false, false);
         var vrEnd = ResidualValueCalculator.Calculate(
-            VectronFixture.Series, VectronFixture.Parameters, 7m, Mileage.FromKilometers(840_000m), false, false);
+            VectronFixture.Model, VectronFixture.Parameters, 7m, Mileage.FromKilometers(840_000m), false, false);
         var average = Money.Eur((vrStart.Amount + vrEnd.Amount) / 2m);
 
-        var priced = InsuranceCalculator.Calculate(VectronFixture.Series, average, VectronFixture.Parameters.InsuranceMargin);
+        var priced = InsuranceCalculator.Calculate(VectronFixture.Model, average, VectronFixture.Parameters.InsuranceMargin);
 
         var expectedPremium = average.Amount * 0.03m / 12m;
         Assert.Equal(expectedPremium, priced.Cost.Amount, 6);
@@ -31,15 +31,15 @@ public class InsuranceCalculatorTests
         Money AveragePour(decimal dureeAns)
         {
             var vrStart = ResidualValueCalculator.Calculate(
-                VectronFixture.Series, VectronFixture.Parameters, 5m, Mileage.FromKilometers(600_000m), false, false);
+                VectronFixture.Model, VectronFixture.Parameters, 5m, Mileage.FromKilometers(600_000m), false, false);
             var vrEnd = ResidualValueCalculator.Calculate(
-                VectronFixture.Series, VectronFixture.Parameters, 5m + dureeAns,
+                VectronFixture.Model, VectronFixture.Parameters, 5m + dureeAns,
                 Mileage.FromKilometers(600_000m + 120_000m * dureeAns), false, false);
             return Money.Eur((vrStart.Amount + vrEnd.Amount) / 2m);
         }
 
-        var primeCourte = InsuranceCalculator.Calculate(VectronFixture.Series, AveragePour(1m), VectronFixture.Parameters.InsuranceMargin);
-        var primeLongue = InsuranceCalculator.Calculate(VectronFixture.Series, AveragePour(5m), VectronFixture.Parameters.InsuranceMargin);
+        var primeCourte = InsuranceCalculator.Calculate(VectronFixture.Model, AveragePour(1m), VectronFixture.Parameters.InsuranceMargin);
+        var primeLongue = InsuranceCalculator.Calculate(VectronFixture.Model, AveragePour(5m), VectronFixture.Parameters.InsuranceMargin);
 
         Assert.True(primeLongue.Cost.Amount < primeCourte.Cost.Amount);
     }

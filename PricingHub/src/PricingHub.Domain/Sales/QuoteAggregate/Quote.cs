@@ -1,4 +1,4 @@
-using PricingHub.Domain.Catalog.SeriesAggregate;
+using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.Domain.Common;
 using PricingHub.Domain.Pricing;
 using PricingHub.Domain.Pricing.Calculations;
@@ -26,7 +26,7 @@ namespace PricingHub.Domain.Sales.QuoteAggregate;
 public sealed class Quote : AggregateRoot<QuoteId>
 {
     public CustomerCode CustomerCode { get; private set; }
-    public SeriesCode SeriesCode { get; private set; }
+    public ModelCode ModelCode { get; private set; }
     public OpportunityId? OpportunityId { get; private set; }
     public QuoteStatus Status { get; private set; }
 
@@ -82,7 +82,7 @@ public sealed class Quote : AggregateRoot<QuoteId>
     private Quote(
         QuoteId id,
         CustomerCode customerCode,
-        SeriesCode seriesCode,
+        ModelCode modelCode,
         Mileage annualMileage,
         Duration contractDuration,
         int quantity,
@@ -92,7 +92,7 @@ public sealed class Quote : AggregateRoot<QuoteId>
         : base(id)
     {
         CustomerCode = customerCode;
-        SeriesCode = seriesCode;
+        ModelCode = modelCode;
         AnnualMileage = annualMileage;
         ContractDuration = contractDuration;
         Quantity = quantity;
@@ -105,7 +105,7 @@ public sealed class Quote : AggregateRoot<QuoteId>
     public static Result<Quote> CreateDraft(
         QuoteId id,
         CustomerCode customerCode,
-        SeriesCode seriesCode,
+        ModelCode modelCode,
         Mileage annualMileage,
         Duration contractDuration,
         int quantity,
@@ -124,7 +124,7 @@ public sealed class Quote : AggregateRoot<QuoteId>
         };
 
         return Result.Success(new Quote(
-            id, customerCode, seriesCode, annualMileage, contractDuration, quantity, startDate, isCampaign, lines));
+            id, customerCode, modelCode, annualMileage, contractDuration, quantity, startDate, isCampaign, lines));
     }
 
     public void AssignLocomotive(

@@ -1,4 +1,4 @@
-using PricingHub.Domain.Catalog.SeriesAggregate;
+using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.SharedKernel;
 
 namespace PricingHub.Domain.Pricing.Calculations;
@@ -11,9 +11,9 @@ namespace PricingHub.Domain.Pricing.Calculations;
 /// </summary>
 public static class InsuranceCalculator
 {
-    public static PricedLine Calculate(Series series, Money contractAverageResidualValue, Percentage margin)
+    public static PricedLine Calculate(Model model, Money contractAverageResidualValue, Percentage margin)
     {
-        var premium = contractAverageResidualValue.Multiply(series.AnnualInsuranceRate).Multiply(1m / 12m);
+        var premium = contractAverageResidualValue.Multiply(model.AnnualInsuranceRate).Multiply(1m / 12m);
         var catalogPrice = premium + premium * margin;
         return new PricedLine(PriceLine.Insurance, premium, catalogPrice, premium);
     }

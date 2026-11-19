@@ -1,4 +1,4 @@
-using PricingHub.Domain.Catalog.SeriesAggregate;
+using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.Domain.Pricing.PriceBookAggregate;
 using PricingHub.Domain.Sales.CustomerAggregate;
 using PricingHub.Domain.Sales.QuoteAggregate;
@@ -16,7 +16,7 @@ public class ApprovalRequestTests
             QuoteId.New(),
             PriceBookNumber.Of(1),
             CustomerCode.Of("CLIENTOK"),
-            SeriesCode.Of("VECTRON"),
+            ModelCode.Of("VECTRON"),
             validationLevel,
             Money.Eur(5_000m),
             validatorEmail,

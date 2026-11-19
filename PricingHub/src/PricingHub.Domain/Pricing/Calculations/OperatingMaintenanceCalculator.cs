@@ -1,4 +1,4 @@
-using PricingHub.Domain.Catalog.SeriesAggregate;
+using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.Domain.Pricing.PriceBookAggregate;
 using PricingHub.SharedKernel;
 
@@ -13,11 +13,11 @@ namespace PricingHub.Domain.Pricing.Calculations;
 public static class OperatingMaintenanceCalculator
 {
     public static PricedLine Calculate(
-        Series series, Mileage annualMileage, MileageBracket mileageBracket, BudgetPlanEntry budgetPlan, Percentage margin)
+        Model model, Mileage annualMileage, MileageBracket mileageBracket, BudgetPlanEntry budgetPlan, Percentage margin)
     {
-        var currency = series.OperatingMaintenanceFixedCost.Currency;
-        var variableCost = Money.Of(series.OperatingMaintenanceVariableCostPerKilometer * annualMileage.Kilometers, currency);
-        var monthlyCost = (series.OperatingMaintenanceFixedCost + variableCost)
+        var currency = model.OperatingMaintenanceFixedCost.Currency;
+        var variableCost = Money.Of(model.OperatingMaintenanceVariableCostPerKilometer * annualMileage.Kilometers, currency);
+        var monthlyCost = (model.OperatingMaintenanceFixedCost + variableCost)
             * (1m / 12m)
             * mileageBracket.OperatingMaintenanceCoefficient;
 

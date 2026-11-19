@@ -11,14 +11,14 @@ public class HeavyMaintenanceCalculatorTests
     public void CoutHmParKm_EgaleLaFormule()
     {
         var expected = (150_000m + 200_000m) / (16m * 120_000m);
-        Assert.Equal(expected, VectronFixture.Series.HeavyMaintenanceCostPerKilometer, 10);
+        Assert.Equal(expected, VectronFixture.Model.HeavyMaintenanceCostPerKilometer, 10);
     }
 
     [Fact]
     public void PrixCatalogueHmAuDessusDuBp()
     {
         var priced = HeavyMaintenanceCalculator.Calculate(
-            VectronFixture.Series, Mileage.FromKilometers(120_000m), VectronFixture.BracketA, VectronFixture.BudgetPlanA,
+            VectronFixture.Model, Mileage.FromKilometers(120_000m), VectronFixture.BracketA, VectronFixture.BudgetPlanA,
             VectronFixture.Parameters.HeavyMaintenanceMargin);
 
         var monthlyCost = (150_000m + 200_000m) / (16m * 120_000m) * 120_000m / 12m * 1.0m;
@@ -35,7 +35,7 @@ public class HeavyMaintenanceCalculatorTests
     {
         // À 80 000 km/an (bas de la tranche A), le BP HM (2 000) dépasse le coût + marge.
         var priced = HeavyMaintenanceCalculator.Calculate(
-            VectronFixture.Series, Mileage.FromKilometers(80_000m), VectronFixture.BracketA, VectronFixture.BudgetPlanA,
+            VectronFixture.Model, Mileage.FromKilometers(80_000m), VectronFixture.BracketA, VectronFixture.BudgetPlanA,
             VectronFixture.Parameters.HeavyMaintenanceMargin);
 
         var monthlyCost = (150_000m + 200_000m) / (16m * 120_000m) * 80_000m / 12m * 1.0m;

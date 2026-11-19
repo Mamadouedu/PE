@@ -1,4 +1,4 @@
-using PricingHub.Domain.Catalog.SeriesAggregate;
+using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.Domain.Pricing.PriceBookAggregate;
 using PricingHub.SharedKernel;
 
@@ -15,10 +15,10 @@ namespace PricingHub.Domain.Pricing.Calculations;
 /// </summary>
 public static class AdditionalMileageCalculator
 {
-    public static decimal CalculatePerKilometerPrice(Series series, MileageBracket mileageBracket, Percentage surcharge)
+    public static decimal CalculatePerKilometerPrice(Model model, MileageBracket mileageBracket, Percentage surcharge)
     {
-        var baseRate = series.HeavyMaintenanceCostPerKilometer * mileageBracket.HeavyMaintenanceCoefficient
-            + series.OperatingMaintenanceVariableCostPerKilometer * mileageBracket.OperatingMaintenanceCoefficient;
+        var baseRate = model.HeavyMaintenanceCostPerKilometer * mileageBracket.HeavyMaintenanceCoefficient
+            + model.OperatingMaintenanceVariableCostPerKilometer * mileageBracket.OperatingMaintenanceCoefficient;
         return baseRate * (1m + surcharge.Value);
     }
 }

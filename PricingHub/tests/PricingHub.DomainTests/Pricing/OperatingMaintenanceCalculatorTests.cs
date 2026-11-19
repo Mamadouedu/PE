@@ -1,3 +1,4 @@
+using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.Domain.Catalog.SeriesAggregate;
 using PricingHub.Domain.Pricing.Calculations;
 using PricingHub.Domain.Pricing.PriceBookAggregate;
@@ -13,7 +14,7 @@ public class OperatingMaintenanceCalculatorTests
     public void BpOmBloqueLePrixCatalogue()
     {
         var priced = OperatingMaintenanceCalculator.Calculate(
-            VectronFixture.Series, Mileage.FromKilometers(120_000m), VectronFixture.BracketA, VectronFixture.BudgetPlanA,
+            VectronFixture.Model, Mileage.FromKilometers(120_000m), VectronFixture.BracketA, VectronFixture.BudgetPlanA,
             VectronFixture.Parameters.OperatingMaintenanceMargin);
 
         var monthlyCost = (6_000m + 0.05m * 120_000m) / 12m * 1.0m;
@@ -29,8 +30,8 @@ public class OperatingMaintenanceCalculatorTests
     public void CoutPlusMargeDomineQuandSuperieurAuBp()
     {
         // Isolé du cas BP-dominant par défaut : un OM/km élevé fait gagner le coût + marge.
-        var series = Series.Create(
-            SeriesCode.Of("S1"), "S1", Money.Eur(1_000_000m), serviceLifeYears: 30,
+        var model = Model.Create(
+            ModelCode.Of("S1"), SeriesCode.Of("S1_SERIES"), "S1", Money.Eur(1_000_000m), serviceLifeYears: 30,
             endOfLifeResidualRate: Percentage.FromRatio(0.10m), referenceAnnualMileage: Mileage.FromKilometers(120_000m),
             heavyMaintenance8YearCost: Money.Eur(0m), heavyMaintenance16YearCost: Money.Eur(0m),
             operatingMaintenanceFixedCost: Money.Eur(0m), operatingMaintenanceVariableCostPerKilometer: 0.50m,
@@ -38,10 +39,10 @@ public class OperatingMaintenanceCalculatorTests
 
         var bracket = MileageBracket.Create(0m, null, 1.0m, 1.0m, 1.0m).Value;
         var budgetPlan = BudgetPlanEntry.Create(
-            SeriesCode.Of("S1"), bracket, Money.Eur(0m), Money.Eur(100m), "2026").Value;
+            ModelCode.Of("S1"), bracket, Money.Eur(0m), Money.Eur(100m), "2026").Value;
 
         var priced = OperatingMaintenanceCalculator.Calculate(
-            series, Mileage.FromKilometers(120_000m), bracket, budgetPlan, Percentage.FromRatio(0.12m));
+            model, Mileage.FromKilometers(120_000m), bracket, budgetPlan, Percentage.FromRatio(0.12m));
 
         var monthlyCost = (0m + 0.50m * 120_000m) / 12m * 1.0m;
         Assert.Equal(5_000.0m, monthlyCost, 6);

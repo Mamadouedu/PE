@@ -1,4 +1,4 @@
-using PricingHub.Domain.Catalog.SeriesAggregate;
+using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.Domain.Common;
 using PricingHub.SharedKernel;
 
@@ -7,9 +7,10 @@ namespace PricingHub.Domain.Pricing.PriceBookAggregate;
 /// <summary>
 /// Une version du référentiel pricing : tranches de km, grille Dry lease,
 /// Budget Plan et paramètres globaux — tout ce dont les calculateurs ont
-/// besoin pour chiffrer une offre sur une série donnée. Équivalent du
-/// modèle Python <c>VersionReferentiel</c> (hors séries, clients et flotte,
-/// qui vivent dans leurs propres contextes — Catalog et Sales).
+/// besoin pour chiffrer une offre sur un modèle donné. Équivalent du
+/// modèle Python <c>VersionReferentiel</c> (hors produits, séries, modèles,
+/// clients et flotte, qui vivent dans leurs propres contextes — Catalog et
+/// Sales).
 ///
 /// Racine d'agrégat : les tranches, la grille et le BP ne se modifient
 /// qu'à travers elle, jamais directement.
@@ -74,20 +75,20 @@ public sealed class PriceBook : AggregateRoot<PriceBookNumber>
             : Result.Failure<MileageBracket>($"Aucune tranche de km ne couvre {annualMileage} km/an.");
     }
 
-    public Result<DryLeaseGridEntry> DryLeaseGridEntryFor(SeriesCode seriesCode, int durationMonths)
+    public Result<DryLeaseGridEntry> DryLeaseGridEntryFor(ModelCode modelCode, int durationMonths)
     {
-        var entry = _dryLeaseGrid.FirstOrDefault(e => e.SeriesCode == seriesCode && e.DurationBracket.Contains(durationMonths));
+        var entry = _dryLeaseGrid.FirstOrDefault(e => e.ModelCode == modelCode && e.DurationBracket.Contains(durationMonths));
         return entry is not null
             ? Result.Success(entry)
-            : Result.Failure<DryLeaseGridEntry>($"Aucune grille Dry lease pour {seriesCode} à {durationMonths} mois.");
+            : Result.Failure<DryLeaseGridEntry>($"Aucune grille Dry lease pour {modelCode} à {durationMonths} mois.");
     }
 
-    public Result<BudgetPlanEntry> BudgetPlanEntryFor(SeriesCode seriesCode, decimal annualMileage)
+    public Result<BudgetPlanEntry> BudgetPlanEntryFor(ModelCode modelCode, decimal annualMileage)
     {
-        var entry = _budgetPlan.FirstOrDefault(e => e.SeriesCode == seriesCode && e.MileageBracket.Contains(annualMileage));
+        var entry = _budgetPlan.FirstOrDefault(e => e.ModelCode == modelCode && e.MileageBracket.Contains(annualMileage));
         return entry is not null
             ? Result.Success(entry)
-            : Result.Failure<BudgetPlanEntry>($"Aucun BP pour la série {seriesCode} à {annualMileage} km/an.");
+            : Result.Failure<BudgetPlanEntry>($"Aucun BP pour le modèle {modelCode} à {annualMileage} km/an.");
     }
 
     /// <summary>Publication — bloquée si une anomalie bloquante du contrôle

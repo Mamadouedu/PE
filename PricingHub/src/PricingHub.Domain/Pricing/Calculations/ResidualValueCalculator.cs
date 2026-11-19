@@ -1,4 +1,4 @@
-using PricingHub.Domain.Catalog.SeriesAggregate;
+using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.Domain.Pricing.PriceBookAggregate;
 using PricingHub.SharedKernel;
 
@@ -12,23 +12,25 @@ namespace PricingHub.Domain.Pricing.Calculations;
 ///
 /// Porté terme à terme depuis <c>engine.calculer_valeur_residuelle</c> :
 /// <c>usure + bonus − perte_km</c>, plafonné en dessous par le plancher
-/// <c>VN × plancher_vr_taux</c>.
+/// <c>VN × plancher_vr_taux</c>. Calculé à partir d'un <see cref="Model"/>
+/// (pas d'un <c>Series</c>) : c'est le modèle qui porte VN, durée de vie et
+/// km de référence.
 /// </summary>
 public static class ResidualValueCalculator
 {
     public static Money Calculate(
-        Series series,
+        Model model,
         PricingParameters parameters,
         decimal ageYears,
         Mileage cumulativeMileage,
         bool heavyMaintenance8YearDone,
         bool heavyMaintenance16YearDone)
     {
-        var newValue = series.NewValue;
+        var newValue = model.NewValue;
         var floor = newValue * parameters.ResidualValueFloorRate;
 
-        var agingRatio = Math.Min(1m, ageYears / series.ServiceLifeYears);
-        var wearRatio = 1m - (1m - series.EndOfLifeResidualRate.Value) * agingRatio;
+        var agingRatio = Math.Min(1m, ageYears / model.ServiceLifeYears);
+        var wearRatio = 1m - (1m - model.EndOfLifeResidualRate.Value) * agingRatio;
         var wear = newValue * wearRatio;
 
         var bonus = Money.Zero(newValue.Currency);
@@ -42,7 +44,7 @@ public static class ResidualValueCalculator
             bonus += newValue * parameters.ResidualValueBonusHm16;
         }
 
-        var theoreticalMileage = series.ReferenceAnnualMileage.Kilometers * ageYears;
+        var theoreticalMileage = model.ReferenceAnnualMileage.Kilometers * ageYears;
         var excessMileage = Math.Max(0m, cumulativeMileage.Kilometers - theoreticalMileage);
         var mileagePenalty = Money.Of(parameters.ValueLossPerKilometerOutOfReference * excessMileage, newValue.Currency);
 

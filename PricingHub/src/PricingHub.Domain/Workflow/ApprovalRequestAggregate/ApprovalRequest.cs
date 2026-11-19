@@ -1,4 +1,4 @@
-using PricingHub.Domain.Catalog.SeriesAggregate;
+using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.Domain.Common;
 using PricingHub.Domain.Pricing.PriceBookAggregate;
 using PricingHub.Domain.Sales.CustomerAggregate;
@@ -31,7 +31,7 @@ public sealed class ApprovalRequest : AggregateRoot<ApprovalRequestId>
     public QuoteId QuoteId { get; private set; }
     public PriceBookNumber PriceBookNumber { get; private set; }
     public CustomerCode CustomerCode { get; private set; }
-    public SeriesCode SeriesCode { get; private set; }
+    public ModelCode ModelCode { get; private set; }
     public Money MonthlyRetainedAmount { get; private set; }
     public string? ValidatorEmail { get; private set; }
 
@@ -51,7 +51,7 @@ public sealed class ApprovalRequest : AggregateRoot<ApprovalRequestId>
         QuoteId quoteId,
         PriceBookNumber priceBookNumber,
         CustomerCode customerCode,
-        SeriesCode seriesCode,
+        ModelCode modelCode,
         int validationLevel,
         Money monthlyRetainedAmount,
         string? validatorEmail,
@@ -62,7 +62,7 @@ public sealed class ApprovalRequest : AggregateRoot<ApprovalRequestId>
         QuoteId = quoteId;
         PriceBookNumber = priceBookNumber;
         CustomerCode = customerCode;
-        SeriesCode = seriesCode;
+        ModelCode = modelCode;
         ValidationLevel = validationLevel;
         MonthlyRetainedAmount = monthlyRetainedAmount;
         ValidatorEmail = validatorEmail;
@@ -80,7 +80,7 @@ public sealed class ApprovalRequest : AggregateRoot<ApprovalRequestId>
         QuoteId quoteId,
         PriceBookNumber priceBookNumber,
         CustomerCode customerCode,
-        SeriesCode seriesCode,
+        ModelCode modelCode,
         int validationLevel,
         Money monthlyRetainedAmount,
         string? validatorEmail,
@@ -104,7 +104,7 @@ public sealed class ApprovalRequest : AggregateRoot<ApprovalRequestId>
         }
 
         var request = new ApprovalRequest(
-            id, quoteId, priceBookNumber, customerCode, seriesCode, validationLevel, monthlyRetainedAmount,
+            id, quoteId, priceBookNumber, customerCode, modelCode, validationLevel, monthlyRetainedAmount,
             validatorEmail, requestedBy, justification);
 
         request.Raise(new ApprovalRequested(id, validationLevel, validatorEmail));

@@ -1,31 +1,32 @@
-using PricingHub.Domain.Catalog.SeriesAggregate;
+using PricingHub.Domain.Catalog.ModelAggregate;
 using PricingHub.SharedKernel;
 
 namespace PricingHub.Domain.Pricing.PriceBookAggregate;
 
-/// <summary>Loyer Dry lease catalogue pour une série × tranche de durée —
+/// <summary>Loyer Dry lease catalogue pour un modèle × tranche de durée —
 /// avant application du coefficient de tranche de km. Équivalent du modèle
-/// Python <c>GrilleDryLeaseEntry</c>.</summary>
+/// Python <c>GrilleDryLeaseEntry</c>, porté au niveau Model (le référentiel
+/// catalogue le plus fin) plutôt que Series.</summary>
 public sealed class DryLeaseGridEntry
 {
-    public SeriesCode SeriesCode { get; }
+    public ModelCode ModelCode { get; }
     public DurationBracket DurationBracket { get; }
     public Money MonthlyRent { get; }
 
-    private DryLeaseGridEntry(SeriesCode seriesCode, DurationBracket durationBracket, Money monthlyRent)
+    private DryLeaseGridEntry(ModelCode modelCode, DurationBracket durationBracket, Money monthlyRent)
     {
-        SeriesCode = seriesCode;
+        ModelCode = modelCode;
         DurationBracket = durationBracket;
         MonthlyRent = monthlyRent;
     }
 
-    public static Result<DryLeaseGridEntry> Create(SeriesCode seriesCode, DurationBracket durationBracket, Money monthlyRent)
+    public static Result<DryLeaseGridEntry> Create(ModelCode modelCode, DurationBracket durationBracket, Money monthlyRent)
     {
         if (monthlyRent.Amount <= 0m)
         {
             return Result.Failure<DryLeaseGridEntry>("Le loyer catalogue doit être strictement positif.");
         }
 
-        return Result.Success(new DryLeaseGridEntry(seriesCode, durationBracket, monthlyRent));
+        return Result.Success(new DryLeaseGridEntry(modelCode, durationBracket, monthlyRent));
     }
 }
