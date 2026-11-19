@@ -1,17 +1,20 @@
 """API du moteur de prix (M2-06) et administration minimale du référentiel.
 
 Cette API est la seule porte d'entrée vers la logique de prix : elle sera
-appelée à l'identique par le configurateur KAM (Power Apps), Power BI et
-l'agent IA (cf. section 4, architecture cible). L'administration du
-référentiel exposée ici (brouillon / contrôles qualité / publication) est
-une version minimale ; en cible, la saisie se fait dans Dataverse.
+appelée à l'identique par le configurateur KAM (application web), Power
+Automate et l'agent IA (version sur mesure, sans Power Apps). L'administration
+du référentiel exposée ici (brouillon / contrôles qualité / publication) est
+une version minimale, destinée à être remplacée par un vrai configurateur.
 """
 
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.staticfiles import StaticFiles
 
 from .engine import calculer_offre, validateur_requis
 from .models import (
@@ -32,7 +35,25 @@ app = FastAPI(
     title="Akiem Pricing — Moteur de prix",
     description="API du moteur de prix full service leasing (Lot 1 — Socle).",
     version="0.1.0",
+    docs_url=None,
 )
+
+# Documentation interactive servie en local (pas de CDN) : de nombreux
+# réseaux d'entreprise, comme celui qui a motivé ce cahier, bloquent les CDN
+# publics. Mêmes assets que ceux que FastAPI pointe par défaut (jsdelivr),
+# juste rapatriés dans static_vendor/ (voir swagger-ui/README dans ce dossier).
+_SWAGGER_DIR = Path(__file__).parent / "static_vendor" / "swagger-ui"
+app.mount("/static/swagger-ui", StaticFiles(directory=str(_SWAGGER_DIR)), name="swagger-ui-static")
+
+
+@app.get("/docs", include_in_schema=False)
+def documentation_interactive():
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} — Docs",
+        swagger_js_url="/static/swagger-ui/swagger-ui-bundle.js",
+        swagger_css_url="/static/swagger-ui/swagger-ui.css",
+    )
 
 
 def _build_referentiel() -> Referentiel:
