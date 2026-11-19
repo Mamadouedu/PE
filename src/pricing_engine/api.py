@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 
@@ -36,6 +37,22 @@ app = FastAPI(
     description="API du moteur de prix full service leasing (Lot 1 — Socle).",
     version="0.1.0",
     docs_url=None,
+)
+
+# CORS : origines du frontend (configurateur KAM) autorisées à appeler cette
+# API. En dev, le serveur Vite par défaut ; en production, à restreindre au
+# domaine réel via CORS_ORIGINS (liste séparée par des virgules).
+_cors_origins = [
+    o.strip()
+    for o in os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Documentation interactive servie en local (pas de CDN) : de nombreux

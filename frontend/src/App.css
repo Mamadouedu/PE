@@ -1,0 +1,389 @@
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+}
+
+.entete {
+  margin-bottom: 24px;
+}
+
+.entete h1 {
+  font-size: 26px;
+}
+
+.entete p {
+  color: var(--fg-muted);
+  margin-top: 4px;
+}
+
+.contenu {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .contenu {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Formulaire --- */
+
+.configurateur-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+}
+
+.configurateur-form fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.configurateur-form legend {
+  font-size: 12.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-ink);
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+.configurateur-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13.5px;
+  color: var(--fg-muted);
+}
+
+.configurateur-form label.case-a-cocher {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+}
+
+.configurateur-form input[type="text"],
+.configurateur-form input[type="number"],
+.configurateur-form input[type="date"],
+.configurateur-form input {
+  font: inherit;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.configurateur-form input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.sous-champs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+.aide {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.briques-incluses,
+.prix-negocies {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.configurateur-form button {
+  margin-top: 6px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.configurateur-form button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* --- Résultat --- */
+
+.zone-resultat {
+  min-height: 200px;
+}
+
+.aide-resultat {
+  color: var(--fg-muted);
+  padding: 40px 0;
+  text-align: center;
+}
+
+.erreur {
+  background: color-mix(in srgb, var(--erreur) 12%, var(--surface));
+  border: 1px solid var(--erreur);
+  color: var(--erreur);
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.bandeau-projet {
+  background: color-mix(in srgb, var(--alerte) 15%, var(--surface));
+  border: 1px solid var(--alerte);
+  color: var(--alerte);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+
+.briques {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.brique-carte {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.brique-carte header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.brique-carte h3 {
+  font-size: 14.5px;
+}
+
+.statut-badge {
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.brique-ok .statut-badge {
+  color: var(--ok);
+}
+
+.brique-alerte .statut-badge {
+  color: var(--alerte);
+}
+
+.brique-sous_plancher {
+  border-color: var(--erreur);
+}
+.brique-sous_plancher .statut-badge {
+  color: var(--erreur);
+}
+
+.brique-exclue {
+  opacity: 0.6;
+}
+
+.brique-carte dl {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.brique-carte dl > div {
+  text-align: center;
+}
+
+.brique-carte dt {
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.brique-carte dd {
+  margin: 2px 0 0;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.valeur-forte {
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/* Jauge de négociation */
+
+.jauge {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.jauge-piste {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(
+    to right,
+    var(--erreur) 0%,
+    var(--alerte) 10%,
+    var(--ok) 100%
+  );
+  opacity: 0.35;
+}
+
+.jauge-marqueur {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 14px;
+  background: var(--accent-ink);
+  border-radius: 2px;
+  transform: translateX(-1.5px);
+}
+
+.jauge-marqueur-alerte {
+  background: var(--erreur);
+}
+
+.jauge-bornes {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--fg-muted);
+}
+
+/* Totaux */
+
+.totaux {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.totaux > div {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.totaux span {
+  font-size: 11.5px;
+  color: var(--fg-muted);
+}
+
+.totaux strong {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Niveau de validation */
+
+.niveau-validation {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 20px;
+}
+
+.niveau-validation h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--fg-muted);
+  margin-bottom: 6px;
+}
+
+.niveau-validation p {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.niveau-ok {
+  color: var(--ok);
+}
+
+.niveau-attention {
+  color: var(--alerte);
+}
+
+/* Contrôles */
+
+.controles {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.controles h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--fg-muted);
+  margin-bottom: 8px;
+}
+
+.controles ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13.5px;
+}
+
+.controle-ok {
+  color: var(--fg);
+}
+
+.controle-ok::marker,
+.controle-ok {
+  color: var(--fg);
+}
+
+.controle-echec {
+  color: var(--erreur);
+  font-weight: 600;
+}

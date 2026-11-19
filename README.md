@@ -19,6 +19,7 @@ déjà écrite ici et indépendante de ce choix d'architecture.
 | `pricing_engine/engine.py` | Calcul par brique (Dry lease, HM, OM, Assurance), valeur résiduelle, km supplémentaire, détail explicable, niveau de validation, 8 contrôles avant envoi | M2-01 à M2-05, section 6.2, 6.3, 6.4 |
 | `pricing_engine/api.py` | API FastAPI : chiffrage (`POST /api/v1/prix`) + administration minimale du référentiel ; bascule sur PostgreSQL si `DATABASE_URL` est défini | M2-06, M10 (base) |
 | `tests/` | 49 tests pytest : une formule de la section 6 par test, scénarios de non-régression par niveau de validation, contrôles avant envoi, cycle de vie du référentiel (mémoire et PostgreSQL), API | M2-07 |
+| `frontend/` | Configurateur KAM (React + TypeScript) : saisie, prix par brique avec jauge de négociation, niveau de validation, 8 contrôles avant envoi — remplace Power Apps | M3-01 à M3-03, M3-07 |
 
 `referentiel.py` ne dépend jamais de SQLAlchemy : le stockage est un
 `ReferentielBackend` pluggable (`InMemoryReferentielBackend` par défaut,
@@ -28,7 +29,10 @@ mémoire, sans base de données.
 
 ## Ce qui n'est pas dans ce dépôt (hors périmètre code pour l'instant)
 
-- Configurateur KAM : application web (ex. React) consommant cette API, à la place de Power Apps.
+- Dans le configurateur : comparateur de 3 scénarios (M3-04), génération de
+  l'offre PDF (M3-05), journal des offres et écriture dans Pipedrive (M3-06),
+  assistant conversationnel (M3-08). Pas d'authentification non plus : le
+  configurateur suppose pour l'instant un KAM déjà identifié.
 - Workflow de dérogation : webhook vers Power Automate (conservé) + carte d'approbation Teams.
 - Intégrations Pipedrive / Sage, flotte : jobs planifiés / webhooks vers ce backend.
 - Analytique, cockpit, synthèse direction : Qlik Sense (conservé) à la place de Power BI / Fabric.
@@ -136,12 +140,47 @@ avant envoi — jamais choisi par le KAM (section 7).
 
 Avant de chiffrer, le référentiel doit avoir une version **publiée** : voir
 les tests `tests/test_api.py` pour un exemple complet de cycle de vie
-(brouillon → contrôles qualité → publication → chiffrage).
+(brouillon → contrôles qualité → publication → chiffrage), ou le script de
+seed ci-dessous pour en publier une en local en une commande.
+
+### Peupler une base de démonstration
+
+```bash
+DATABASE_URL="postgresql+psycopg://pricing:pricing@localhost/pricing_dev" \
+    python3 scripts/seed_dev.py
+```
+
+Publie un référentiel minimal (série VECTRON, grille, BP, 3 clients, 1
+locomotive, délégations) — les mêmes données que `tests/conftest.py`, pour
+que ce qui marche dans les tests marche aussi dans le configurateur.
+
+## Frontend — Configurateur KAM
+
+Application React + TypeScript (Vite) qui remplace Power Apps (M3) : elle ne
+fait qu'appeler `POST /api/v1/prix` et afficher le résultat. Les coûts et
+marges que l'API renvoie (`cout` par brique, `etapes_calcul`,
+`cout_reference_mensuel`) sont délibérément filtrés avant l'affichage
+(`frontend/src/api/offre.ts`, testé par `offre.test.ts`) : un KAM n'y a pas
+accès (M3-07).
+
+```bash
+cd frontend
+npm install
+npm run dev       # http://localhost:5173, API par défaut http://127.0.0.1:8000
+npm run test      # vitest
+npm run build      # vérifie aussi les types (tsc -b)
+```
+
+`VITE_API_BASE_URL` (voir `.env.example`) pointe vers une autre API si
+besoin. Le `CORS_ORIGINS` de l'API (`api.py`) doit alors inclure l'origine
+du frontend — `http://localhost:5173` par défaut.
 
 ## Prochaines étapes
 
 1. Lot 0 : faire valider ces règles et ces hypothèses par Pricing et la
    Direction sur 3 à 5 offres réelles, face à l'outil Excel actuel.
 2. Mettre en place Alembic avant toute évolution de schéma en production.
-3. Lot 2 : construire le configurateur KAM (application web) et le circuit
-   de dérogation (webhook vers Power Automate + Teams) au-dessus de cette API.
+3. Authentification du configurateur (SSO Entra ID), comparateur de
+   scénarios (M3-04), offre PDF (M3-05), écriture dans Pipedrive (M3-06).
+4. Lot 2 (suite) : circuit de dérogation — webhook vers Power Automate et
+   Teams, déclenché par le configurateur dès que `niveau_validation > 0`.
