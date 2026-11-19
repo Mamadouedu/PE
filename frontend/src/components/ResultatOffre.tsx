@@ -24,11 +24,27 @@ const formatPourcent = new Intl.NumberFormat("fr-FR", {
 interface Props {
   offre: OffreKam;
   configuration: ConfigurationOffre;
+  onAjouterAuComparateur: () => void;
+  comparateurPlein: boolean;
 }
 
-export function ResultatOffre({ offre, configuration }: Props) {
+export function ResultatOffre({
+  offre,
+  configuration,
+  onAjouterAuComparateur,
+  comparateurPlein,
+}: Props) {
   return (
     <div className="resultat-offre">
+      <div className="resultat-entete">
+        <button type="button" className="bouton-secondaire" onClick={onAjouterAuComparateur}>
+          + Ajouter au comparateur
+        </button>
+        {comparateurPlein && (
+          <span className="aide-comparateur">le plus ancien scénario sera remplacé</span>
+        )}
+      </div>
+
       {!offre.envoiDirectPossible && (
         <div className="bandeau-projet">
           <p>

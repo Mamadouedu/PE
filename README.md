@@ -20,7 +20,7 @@ déjà écrite ici et indépendante de ce choix d'architecture.
 | `pricing_engine/derogation.py` | Circuit de dérogation : demande (justification obligatoire), webhook sortant vers Power Automate, décision via webhook entrant, registre central | M4-01 à M4-05 |
 | `pricing_engine/api.py` | API FastAPI : chiffrage (`POST /api/v1/prix`), dérogations, administration minimale du référentiel ; bascule sur PostgreSQL si `DATABASE_URL` est défini | M2-06, M4, M10 (base) |
 | `tests/` | 67 tests pytest : une formule de la section 6 par test, scénarios de non-régression par niveau de validation, contrôles avant envoi, cycle de vie du référentiel et des dérogations (mémoire et PostgreSQL), API | M2-07 |
-| `frontend/` | Configurateur KAM (React + TypeScript) : saisie, prix par brique avec jauge de négociation, niveau de validation, 8 contrôles avant envoi, demande de validation avec suivi en direct — remplace Power Apps | M3-01 à M3-03, M3-07, M4 |
+| `frontend/` | Configurateur KAM (React + TypeScript) : saisie, prix par brique avec jauge de négociation, niveau de validation, 8 contrôles avant envoi, demande de validation avec suivi en direct, comparateur de 3 scénarios — remplace Power Apps | M3-01 à M3-04, M3-07, M4 |
 
 `referentiel.py` ne dépend jamais de SQLAlchemy : le stockage est un
 `ReferentielBackend` pluggable (`InMemoryReferentielBackend` par défaut,
@@ -30,11 +30,11 @@ mémoire, sans base de données.
 
 ## Ce qui n'est pas dans ce dépôt (hors périmètre code pour l'instant)
 
-- Dans le configurateur : comparateur de 3 scénarios (M3-04), génération de
-  l'offre PDF (M3-05), journal des offres et écriture dans Pipedrive (M3-06),
-  assistant conversationnel (M3-08). Pas d'authentification non plus : le
-  configurateur suppose pour l'instant un KAM déjà identifié (son e-mail est
-  saisi à la main au moment de demander une validation).
+- Dans le configurateur : génération de l'offre PDF (M3-05), journal des
+  offres et écriture dans Pipedrive (M3-06), assistant conversationnel
+  (M3-08). Pas d'authentification non plus : le configurateur suppose pour
+  l'instant un KAM déjà identifié (son e-mail est saisi à la main au moment
+  de demander une validation).
 - Dans le circuit de dérogation : le flow Power Automate lui-même (carte
   d'approbation Teams, rappel après délai, escalade, suppléant — M4-03,
   M4-06). Ce dépôt expose le webhook sortant et le webhook entrant qui

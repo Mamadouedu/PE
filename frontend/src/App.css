@@ -153,6 +153,111 @@
   font-size: 14px;
 }
 
+.resultat-entete {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.bouton-secondaire {
+  padding: 7px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--accent-ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.aide-comparateur {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.comparateur {
+  margin-top: 28px;
+}
+
+.comparateur h2 {
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.comparateur-scroll {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.comparateur table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13.5px;
+}
+
+.comparateur th,
+.comparateur td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.comparateur thead th {
+  border-bottom: 2px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.comparateur tbody th {
+  color: var(--fg-muted);
+  font-weight: 500;
+  font-size: 12.5px;
+}
+
+.comparateur-ligne-titre {
+  min-width: 140px;
+}
+
+.comparateur-entete-colonne {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.comparateur-retirer {
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.comparateur-retirer:hover {
+  color: var(--erreur);
+}
+
+.comparateur-ligne-forte td {
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.comparateur td.brique-sous_plancher {
+  color: var(--erreur);
+  font-weight: 600;
+}
+
+.comparateur td.brique-alerte {
+  color: var(--alerte);
+}
+
 .bandeau-projet {
   background: color-mix(in srgb, var(--alerte) 15%, var(--surface));
   border: 1px solid var(--alerte);

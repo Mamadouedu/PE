@@ -3,8 +3,10 @@ import "./App.css";
 import { ApiError, chiffrerOffre } from "./api/client";
 import type { ConfigurationOffre } from "./api/types";
 import { versVueKam, type OffreKam } from "./api/offre";
+import { Comparateur } from "./components/Comparateur";
 import { ConfigurateurForm } from "./components/ConfigurateurForm";
 import { ResultatOffre } from "./components/ResultatOffre";
+import { libelleScenario, MAX_SCENARIOS, type ScenarioComparaison } from "./scenario";
 
 function messageErreur(detail: unknown): string {
   if (typeof detail === "string") return detail;
@@ -19,6 +21,7 @@ export default function App() {
   const [configuration, setConfiguration] = useState<ConfigurationOffre | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
+  const [scenarios, setScenarios] = useState<ScenarioComparaison[]>([]);
 
   async function chiffrer(config: ConfigurationOffre) {
     setEnCours(true);
@@ -39,6 +42,21 @@ export default function App() {
     }
   }
 
+  function ajouterAuComparateur() {
+    if (!offre || !configuration) return;
+    const scenario: ScenarioComparaison = {
+      id: `${Date.now()}`,
+      label: libelleScenario(configuration),
+      configuration,
+      offre,
+    };
+    setScenarios((courant) => [...courant, scenario].slice(-MAX_SCENARIOS));
+  }
+
+  function retirerDuComparateur(id: string) {
+    setScenarios((courant) => courant.filter((s) => s.id !== id));
+  }
+
   return (
     <div className="page">
       <header className="entete">
@@ -51,10 +69,19 @@ export default function App() {
 
         <div className="zone-resultat">
           {erreur && <div className="erreur">{erreur}</div>}
-          {offre && configuration && <ResultatOffre offre={offre} configuration={configuration} />}
+          {offre && configuration && (
+            <ResultatOffre
+              offre={offre}
+              configuration={configuration}
+              onAjouterAuComparateur={ajouterAuComparateur}
+              comparateurPlein={scenarios.length >= MAX_SCENARIOS}
+            />
+          )}
           {!offre && !erreur && (
             <p className="aide-resultat">Remplissez la configuration et cliquez sur « Chiffrer ».</p>
           )}
+
+          <Comparateur scenarios={scenarios} onRetirer={retirerDuComparateur} />
         </div>
       </main>
     </div>
