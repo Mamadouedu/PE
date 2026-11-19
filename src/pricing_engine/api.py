@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
@@ -42,6 +42,7 @@ from .models import (
     TrancheKm,
     Validateur,
 )
+from .offre_pdf import InMemoryOffreGenereeStore, OffreGeneree, OffreGenereeStore, generer_offre
 from .referentiel import AnomalieControleQualite, Referentiel, StatutVersion
 
 app = FastAPI(
@@ -65,6 +66,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Sans ça, le JS du frontend ne peut pas lire Content-Disposition (donc
+    # pas le numéro d'offre dans le nom du fichier téléchargé) : les
+    # navigateurs n'exposent par défaut qu'une courte liste d'en-têtes de
+    # réponse aux requêtes cross-origin, celui-ci n'en fait pas partie.
+    expose_headers=["Content-Disposition"],
 )
 
 # Documentation interactive servie en local (pas de CDN) : de nombreux
@@ -124,6 +130,27 @@ _derogations = _build_derogation_store()
 
 def get_derogations() -> DerogationStore:
     return _derogations
+
+
+def _build_offres_generees_store() -> OffreGenereeStore:
+    """Même principe que `_build_referentiel` : PostgreSQL si `DATABASE_URL`
+    est défini, sinon un registre en mémoire (la numérotation repart alors
+    de 1 à chaque redémarrage — sans conséquence en dev/test)."""
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        return InMemoryOffreGenereeStore()
+
+    from .db import SqlAlchemyOffreGenereeStore, make_session_factory
+
+    return SqlAlchemyOffreGenereeStore(make_session_factory(database_url))
+
+
+_offres_generees = _build_offres_generees_store()
+
+
+def get_offres_generees() -> OffreGenereeStore:
+    return _offres_generees
 
 
 def get_utilisateur(x_utilisateur: str = Header(..., description="E-mail de l'utilisateur")) -> str:
@@ -245,6 +272,44 @@ def decider_une_derogation(
         raise HTTPException(status_code=404, detail="Dérogation inconnue") from exc
     except DecisionInvalide as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/offres/pdf")
+def generer_l_offre_pdf(
+    config: ConfigurationOffre,
+    utilisateur: str = Depends(get_utilisateur),
+    referentiel: Referentiel = Depends(get_referentiel),
+    offres_generees: OffreGenereeStore = Depends(get_offres_generees),
+) -> Response:
+    """Génère l'offre PDF numérotée (M3-05). Le PDF ne montre que le prix
+    retenu par brique — jamais le catalogue ni le plancher (ça révélerait la
+    marge de négociation au client), ni les contrôles internes. Porte la
+    mention PROJET tant que `niveau_validation > 0`. Chaque génération est
+    journalisée (M3-06, la part « journal des offres »)."""
+
+    version = referentiel.version_publiee()
+    if version is None:
+        raise HTTPException(status_code=409, detail="Aucune version du référentiel n'est publiée")
+    try:
+        offre, pdf_bytes = generer_offre(offres_generees, version, config, utilisateur)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="offre-{offre.numero}.pdf"'},
+    )
+
+
+@app.get("/api/v1/offres", response_model=list[OffreGeneree])
+def lister_les_offres_generees(
+    offres_generees: OffreGenereeStore = Depends(get_offres_generees),
+) -> list[OffreGeneree]:
+    """Journal des offres générées (M3-06, part « journal » — l'écriture
+    dans Pipedrive reste à faire)."""
+
+    return offres_generees.lister()
 
 
 @app.get("/api/v1/referentiel/publiee")

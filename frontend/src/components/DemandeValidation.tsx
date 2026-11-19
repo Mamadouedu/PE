@@ -13,10 +13,10 @@ const LIBELLE_STATUT: Record<string, string> = {
 interface Props {
   libelleNiveau: string;
   configuration: ConfigurationOffre;
+  demandeurEmail: string;
 }
 
-export function DemandeValidation({ libelleNiveau, configuration }: Props) {
-  const [demandeurEmail, setDemandeurEmail] = useState("");
+export function DemandeValidation({ libelleNiveau, configuration, demandeurEmail }: Props) {
   const [justification, setJustification] = useState("");
   const [derogation, setDerogation] = useState<DerogationApi | null>(null);
   const [enCours, setEnCours] = useState(false);
@@ -92,16 +92,6 @@ export function DemandeValidation({ libelleNiveau, configuration }: Props) {
         Cette offre nécessite une validation : {libelleNiveau}.
       </p>
       <label>
-        Votre e-mail
-        <input
-          type="email"
-          value={demandeurEmail}
-          onChange={(e) => setDemandeurEmail(e.target.value)}
-          placeholder="vous@akiem.com"
-          required
-        />
-      </label>
-      <label>
         Justification
         <textarea
           value={justification}
@@ -110,8 +100,11 @@ export function DemandeValidation({ libelleNiveau, configuration }: Props) {
           required
         />
       </label>
+      {!demandeurEmail && (
+        <p className="erreur-inline">Renseignez votre e-mail en haut de page avant de continuer.</p>
+      )}
       {erreur && <p className="erreur-inline">{erreur}</p>}
-      <button type="submit" disabled={enCours}>
+      <button type="submit" disabled={enCours || !demandeurEmail}>
         {enCours ? "Envoi en cours…" : "Demander la validation"}
       </button>
     </form>

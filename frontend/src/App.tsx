@@ -22,6 +22,7 @@ export default function App() {
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
   const [scenarios, setScenarios] = useState<ScenarioComparaison[]>([]);
+  const [kamEmail, setKamEmail] = useState("");
 
   async function chiffrer(config: ConfigurationOffre) {
     setEnCours(true);
@@ -60,8 +61,19 @@ export default function App() {
   return (
     <div className="page">
       <header className="entete">
-        <h1>Configurateur KAM</h1>
-        <p>Plateforme Pricing Akiem — chiffrage full service leasing</p>
+        <div>
+          <h1>Configurateur KAM</h1>
+          <p>Plateforme Pricing Akiem — chiffrage full service leasing</p>
+        </div>
+        <label className="identification-kam">
+          Votre e-mail
+          <input
+            type="email"
+            value={kamEmail}
+            onChange={(e) => setKamEmail(e.target.value)}
+            placeholder="vous@akiem.com"
+          />
+        </label>
       </header>
 
       <main className="contenu">
@@ -73,6 +85,7 @@ export default function App() {
             <ResultatOffre
               offre={offre}
               configuration={configuration}
+              demandeurEmail={kamEmail}
               onAjouterAuComparateur={ajouterAuComparateur}
               comparateurPlein={scenarios.length >= MAX_SCENARIOS}
             />

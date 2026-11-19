@@ -2,6 +2,7 @@ import type { OffreKam } from "../api/offre";
 import type { ConfigurationOffre } from "../api/types";
 import { DemandeValidation } from "./DemandeValidation";
 import { JaugeNegociation } from "./JaugeNegociation";
+import { TelechargerPdfButton } from "./TelechargerPdfButton";
 
 const LIBELLE_STATUT: Record<string, string> = {
   ok: "✓ Dans les règles",
@@ -24,6 +25,7 @@ const formatPourcent = new Intl.NumberFormat("fr-FR", {
 interface Props {
   offre: OffreKam;
   configuration: ConfigurationOffre;
+  demandeurEmail: string;
   onAjouterAuComparateur: () => void;
   comparateurPlein: boolean;
 }
@@ -31,6 +33,7 @@ interface Props {
 export function ResultatOffre({
   offre,
   configuration,
+  demandeurEmail,
   onAjouterAuComparateur,
   comparateurPlein,
 }: Props) {
@@ -43,6 +46,7 @@ export function ResultatOffre({
         {comparateurPlein && (
           <span className="aide-comparateur">le plus ancien scénario sera remplacé</span>
         )}
+        <TelechargerPdfButton configuration={configuration} demandeurEmail={demandeurEmail} />
       </div>
 
       {!offre.envoiDirectPossible && (
@@ -51,7 +55,11 @@ export function ResultatOffre({
             PROJET — en attente de validation ({offre.libelleNiveau}). Cette offre ne peut pas être
             envoyée telle quelle.
           </p>
-          <DemandeValidation libelleNiveau={offre.libelleNiveau} configuration={configuration} />
+          <DemandeValidation
+            libelleNiveau={offre.libelleNiveau}
+            configuration={configuration}
+            demandeurEmail={demandeurEmail}
+          />
         </div>
       )}
 

@@ -51,3 +51,30 @@ export async function obtenirDerogation(id: number): Promise<DerogationApi> {
   if (!reponse.ok) await lireErreur(reponse);
   return (await reponse.json()) as DerogationApi;
 }
+
+export interface PdfTelecharge {
+  blob: Blob;
+  nomFichier: string;
+}
+
+// M3-05 : le PDF ne montre jamais catalogue/plancher/contrôles, seulement
+// le prix retenu (voir offre_pdf.py côté API) ; `demandeur` identifie le
+// KAM tant qu'il n'y a pas d'authentification.
+export async function telechargerOffrePdf(
+  configuration: ConfigurationOffre,
+  demandeur: string,
+): Promise<PdfTelecharge> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/offres/pdf`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Utilisateur": demandeur },
+    body: JSON.stringify(configuration),
+  });
+
+  if (!reponse.ok) await lireErreur(reponse);
+
+  const entete = reponse.headers.get("content-disposition") ?? "";
+  const correspondance = /filename="([^"]+)"/.exec(entete);
+  const nomFichier = correspondance?.[1] ?? "offre.pdf";
+
+  return { blob: await reponse.blob(), nomFichier };
+}

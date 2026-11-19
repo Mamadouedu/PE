@@ -60,7 +60,7 @@ def _base_propre():
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE journal_entries, referentiel_versions, derogations "
+                "TRUNCATE journal_entries, referentiel_versions, derogations, offres_generees "
                 "RESTART IDENTITY CASCADE"
             )
         )

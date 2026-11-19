@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 import pricing_engine.api as api_module
 from pricing_engine.derogation import InMemoryDerogationStore
+from pricing_engine.offre_pdf import InMemoryOffreGenereeStore
 from pricing_engine.referentiel import Referentiel
 
 HEADERS = {"X-Utilisateur": "pricing@akiem.com"}
@@ -14,6 +15,7 @@ HEADERS = {"X-Utilisateur": "pricing@akiem.com"}
 def referentiel_propre():
     api_module._referentiel = Referentiel()
     api_module._derogations = InMemoryDerogationStore()
+    api_module._offres_generees = InMemoryOffreGenereeStore()
     yield
 
 
@@ -339,3 +341,56 @@ def test_decision_sur_une_derogation_deja_decidee_est_refusee(client: TestClient
     )
 
     assert r.status_code == 409
+
+
+def _config_dans_les_regles() -> dict:
+    return {
+        "client_code": "CLIENTOK",
+        "serie_code": "VECTRON",
+        "km_annuel": 120_000,
+        "duree_mois": 24,
+        "quantite": 1,
+        "date_debut": "2026-01-01",
+        "age_debut_ans": 5,
+        "km_cumules_debut": 600_000,
+    }
+
+
+def test_generer_le_pdf_renvoie_un_pdf_numerote(client: TestClient):
+    _publier(client)
+
+    r = client.post("/api/v1/offres/pdf", json=_config_dans_les_regles(), headers=HEADERS)
+
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/pdf"
+    assert "AK-000001" in r.headers["content-disposition"]
+    assert r.content[:5] == b"%PDF-"
+
+
+def test_generer_le_pdf_refuse_sans_version_publiee(client: TestClient):
+    r = client.post("/api/v1/offres/pdf", json=_config_dans_les_regles(), headers=HEADERS)
+    assert r.status_code == 409
+
+
+def test_generer_le_pdf_incremente_la_numerotation(client: TestClient):
+    _publier(client)
+
+    r1 = client.post("/api/v1/offres/pdf", json=_config_dans_les_regles(), headers=HEADERS)
+    r2 = client.post("/api/v1/offres/pdf", json=_config_dans_les_regles(), headers=HEADERS)
+
+    assert "AK-000001" in r1.headers["content-disposition"]
+    assert "AK-000002" in r2.headers["content-disposition"]
+
+
+def test_le_journal_des_offres_liste_les_pdf_generes(client: TestClient):
+    _publier(client)
+    client.post("/api/v1/offres/pdf", json=_config_dans_les_regles(), headers=HEADERS)
+
+    r = client.get("/api/v1/offres")
+
+    assert r.status_code == 200
+    offres = r.json()
+    assert len(offres) == 1
+    assert offres[0]["numero"] == "AK-000001"
+    assert offres[0]["utilisateur"] == "pricing@akiem.com"
+    assert offres[0]["client_code"] == "CLIENTOK"

@@ -37,6 +37,7 @@ from .models import (
     TrancheKm,
     Validateur,
 )
+from .offre_pdf import OffreGeneree
 from .referentiel import EntreeJournal, StatutVersion, VersionReferentiel
 
 
@@ -73,6 +74,21 @@ class DerogationRow(Base):
     date_decision: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decideur: Mapped[str | None] = mapped_column(String(255))
     commentaire_decision: Mapped[str | None] = mapped_column(Text)
+
+
+class OffreGenereeRow(Base):
+    __tablename__ = "offres_generees"
+
+    sequence: Mapped[int] = mapped_column(Integer, primary_key=True)
+    numero: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, index=True)
+    date_generation: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    utilisateur: Mapped[str] = mapped_column(String(255), nullable=False)
+    client_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    serie_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    configuration: Mapped[dict] = mapped_column(JSON, nullable=False)
+    version_referentiel: Mapped[int] = mapped_column(Integer, nullable=False)
+    montant_mensuel_retenu: Mapped[float] = mapped_column(nullable=False)
+    niveau_validation: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class JournalRow(Base):
@@ -317,3 +333,58 @@ class SqlAlchemyDerogationStore:
             row.decideur = derogation.decideur
             row.commentaire_decision = derogation.commentaire_decision
             session.commit()
+
+
+def _row_to_offre_generee(row: OffreGenereeRow) -> OffreGeneree:
+    return OffreGeneree(
+        sequence=row.sequence,
+        numero=row.numero,
+        date_generation=row.date_generation,
+        utilisateur=row.utilisateur,
+        client_code=row.client_code,
+        serie_code=row.serie_code,
+        configuration=ConfigurationOffre.model_validate(row.configuration),
+        version_referentiel=row.version_referentiel,
+        montant_mensuel_retenu=row.montant_mensuel_retenu,
+        niveau_validation=row.niveau_validation,
+    )
+
+
+class SqlAlchemyOffreGenereeStore:
+    """Backend PostgreSQL de la numérotation et du journal des offres
+    générées (M3-05, et la part « journal » de M3-06)."""
+
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def prochaine_sequence(self) -> int:
+        with self._session_factory() as session:
+            current_max = session.execute(select(func.max(OffreGenereeRow.sequence))).scalar()
+            return (current_max or 0) + 1
+
+    def enregistrer(self, offre: OffreGeneree) -> None:
+        with self._session_factory() as session:
+            session.add(
+                OffreGenereeRow(
+                    sequence=offre.sequence,
+                    numero=offre.numero,
+                    date_generation=offre.date_generation,
+                    utilisateur=offre.utilisateur,
+                    client_code=offre.client_code,
+                    serie_code=offre.serie_code,
+                    configuration=offre.configuration.model_dump(mode="json"),
+                    version_referentiel=offre.version_referentiel,
+                    montant_mensuel_retenu=offre.montant_mensuel_retenu,
+                    niveau_validation=offre.niveau_validation,
+                )
+            )
+            session.commit()
+
+    def lister(self) -> list[OffreGeneree]:
+        with self._session_factory() as session:
+            rows = (
+                session.execute(select(OffreGenereeRow).order_by(OffreGenereeRow.sequence.desc()))
+                .scalars()
+                .all()
+            )
+            return [_row_to_offre_generee(r) for r in rows]

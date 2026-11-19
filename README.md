@@ -18,23 +18,25 @@ déjà écrite ici et indépendante de ce choix d'architecture.
 | `pricing_engine/db.py` | Backend PostgreSQL du référentiel (remplace Dataverse) : un instantané JSON versionné par table `referentiel_versions`, un journal relationnel requêtable | M1 (sur mesure) |
 | `pricing_engine/engine.py` | Calcul par brique (Dry lease, HM, OM, Assurance), valeur résiduelle, km supplémentaire, détail explicable, niveau de validation, 8 contrôles avant envoi | M2-01 à M2-05, section 6.2, 6.3, 6.4 |
 | `pricing_engine/derogation.py` | Circuit de dérogation : demande (justification obligatoire), webhook sortant vers Power Automate, décision via webhook entrant, registre central | M4-01 à M4-05 |
-| `pricing_engine/api.py` | API FastAPI : chiffrage (`POST /api/v1/prix`), dérogations, administration minimale du référentiel ; bascule sur PostgreSQL si `DATABASE_URL` est défini | M2-06, M4, M10 (base) |
-| `tests/` | 67 tests pytest : une formule de la section 6 par test, scénarios de non-régression par niveau de validation, contrôles avant envoi, cycle de vie du référentiel et des dérogations (mémoire et PostgreSQL), API | M2-07 |
-| `frontend/` | Configurateur KAM (React + TypeScript) : saisie, prix par brique avec jauge de négociation, niveau de validation, 8 contrôles avant envoi, demande de validation avec suivi en direct, comparateur de 3 scénarios — remplace Power Apps | M3-01 à M3-04, M3-07, M4 |
+| `pricing_engine/offre_pdf.py` | Offre PDF numérotée, aux couleurs Akiem, prix retenu uniquement (jamais catalogue/plancher/coût), mention PROJET si validation requise, journal des offres | M3-05, M3-06 (journal) |
+| `pricing_engine/api.py` | API FastAPI : chiffrage, dérogations, offre PDF, administration minimale du référentiel ; bascule sur PostgreSQL si `DATABASE_URL` est défini | M2-06, M3-05, M4, M10 (base) |
+| `tests/` | 81 tests pytest : une formule de la section 6 par test, scénarios de non-régression par niveau de validation, contrôles avant envoi, cycle de vie du référentiel, des dérogations et des offres PDF (mémoire et PostgreSQL), API | M2-07 |
+| `frontend/` | Configurateur KAM (React + TypeScript) : saisie, prix par brique avec jauge de négociation, niveau de validation, 8 contrôles avant envoi, demande de validation avec suivi en direct, comparateur de 3 scénarios, téléchargement du PDF — remplace Power Apps | M3-01 à M3-05, M3-07, M4 |
 
-`referentiel.py` ne dépend jamais de SQLAlchemy : le stockage est un
-`ReferentielBackend` pluggable (`InMemoryReferentielBackend` par défaut,
-`db.SqlAlchemyReferentielBackend` dès que `DATABASE_URL` est défini). Les 44
-tests qui ne portent pas sur la persistance continuent de tourner en
-mémoire, sans base de données.
+`referentiel.py`, `derogation.py` et `offre_pdf.py` ne dépendent jamais de
+SQLAlchemy : chacun expose un backend pluggable (en mémoire par défaut,
+`db.SqlAlchemy*` dès que `DATABASE_URL` est défini). La grande majorité des
+tests ne porte pas sur la persistance et continue de tourner en mémoire,
+sans base de données ; seuls `tests/test_*_postgres.py` ont besoin d'une
+vraie base (voir plus bas) et sont ignorés automatiquement sans elle.
 
 ## Ce qui n'est pas dans ce dépôt (hors périmètre code pour l'instant)
 
-- Dans le configurateur : génération de l'offre PDF (M3-05), journal des
-  offres et écriture dans Pipedrive (M3-06), assistant conversationnel
+- Dans le configurateur : écriture du deal dans Pipedrive (l'autre moitié
+  de M3-06 — le journal, lui, existe déjà), assistant conversationnel
   (M3-08). Pas d'authentification non plus : le configurateur suppose pour
-  l'instant un KAM déjà identifié (son e-mail est saisi à la main au moment
-  de demander une validation).
+  l'instant un KAM déjà identifié (son e-mail, saisi à la main en haut de
+  page, sert à la fois aux dérogations et à la génération du PDF).
 - Dans le circuit de dérogation : le flow Power Automate lui-même (carte
   d'approbation Teams, rappel après délai, escalade, suppléant — M4-03,
   M4-06). Ce dépôt expose le webhook sortant et le webhook entrant qui
@@ -200,6 +202,33 @@ Le configurateur suit la demande en direct (sondage toutes les 4 secondes,
 `frontend/src/components/DemandeValidation.tsx`) : la décision apparaît sans
 recharger la page.
 
+## Offre PDF (M3-05)
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/offres/pdf \
+  -H "Content-Type: application/json" -H "X-Utilisateur: kam@akiem.com" \
+  -d '{"client_code": "CLIENTOK", "serie_code": "VECTRON", "km_annuel": 120000,
+       "duree_mois": 24, "quantite": 1, "date_debut": "2026-01-01",
+       "age_debut_ans": 5, "km_cumules_debut": 600000}' \
+  -o offre.pdf
+```
+
+Chaque appel calcule l'offre, lui attribue un numéro séquentiel
+(`AK-000001`, jamais remis à zéro — y compris entre deux redémarrages si
+`DATABASE_URL` est défini), la journalise (`GET /api/v1/offres`, le
+registre — la part « journal des offres » de M3-06), puis construit le
+PDF.
+
+Ce PDF part chez le client : contrairement à l'écran KAM, il ne montre
+**jamais** le catalogue ni le plancher d'une brique — ça révélerait la
+marge de négociation au client, pas seulement au KAM (une contrainte plus
+stricte que M3-07) — ni les contrôles avant envoi, qui sont un outil
+d'aide à la décision interne. Seul le prix retenu y figure. Il porte la
+mention PROJET tant que `niveau_validation > 0`. Couleurs, mise en page et
+conditions générales sont un placeholder cohérent avec le reste de la
+plateforme, pas la charte graphique ni le texte juridique réels d'Akiem —
+voir l'en-tête de `offre_pdf.py`.
+
 ## Frontend — Configurateur KAM
 
 Application React + TypeScript (Vite) qui remplace Power Apps (M3) : elle ne
@@ -226,7 +255,8 @@ du frontend — `http://localhost:5173` par défaut.
 1. Lot 0 : faire valider ces règles et ces hypothèses par Pricing et la
    Direction sur 3 à 5 offres réelles, face à l'outil Excel actuel.
 2. Mettre en place Alembic avant toute évolution de schéma en production.
-3. Authentification du configurateur (SSO Entra ID), comparateur de
-   scénarios (M3-04), offre PDF (M3-05), écriture dans Pipedrive (M3-06).
-4. Construire le flow Power Automate lui-même (carte Teams, rappel,
+3. Authentification du configurateur (SSO Entra ID) — remplacerait le
+   champ e-mail saisi à la main par une identité fiable.
+4. Écriture du deal dans Pipedrive (M3-06) et assistant conversationnel (M3-08).
+5. Construire le flow Power Automate lui-même (carte Teams, rappel,
    escalade, suppléant) — ce dépôt fournit les deux webhooks qui l'encadrent.
