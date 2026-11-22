@@ -1669,3 +1669,66 @@
 .import-csv-erreurs li {
   line-height: 1.5;
 }
+
+.import-csv-help {
+  margin: 14px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.import-csv-help summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 600;
+  user-select: none;
+}
+
+.import-csv-help summary:hover {
+  text-decoration: underline;
+}
+
+.import-csv-help-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 12px;
+}
+
+.import-csv-help-table th,
+.import-csv-help-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  text-align: left;
+}
+
+.import-csv-help-table th {
+  background: var(--surface-2);
+  font-weight: 600;
+}
+
+.import-csv-help-table code {
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.import-csv-help-list {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
+
+.import-csv-help-list code {
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--fg);
+}

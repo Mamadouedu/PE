@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pricing_engine.csv_import import (
+    detecter_type_import,
     importer_budget_plan,
     importer_flotte,
     importer_grille_dry_lease,
@@ -121,3 +122,47 @@ VECTRON,80000,119999,"1800,5","1400,25",2026
     assert r.nb_lignes_importees == 1
     assert r.budget_plan[0].bp_hm == 1800.5
     assert r.budget_plan[0].bp_om == 1400.25
+
+
+def test_separateur_point_virgule_excel_francais():
+    """Excel francophone sauve avec `;` par défaut. Le parseur doit le
+    détecter automatiquement."""
+    csv = "serie_code;duree_min_mois;duree_max_mois;loyer_mensuel\n"
+    csv += "VECTRON;0;11;22000\n"
+    csv += "VECTRON;12;36;20000\n"
+    r = importer_grille_dry_lease(csv)
+    assert r.nb_lignes_lues == 2
+    assert r.nb_lignes_importees == 2
+    assert r.grille_dry_lease[0].loyer_mensuel == 22000
+
+
+def test_auto_detection_grille_dry_lease():
+    csv = "serie_code,duree_min_mois,duree_max_mois,loyer_mensuel\nVECTRON,0,11,20000\n"
+    assert detecter_type_import(csv) == "dry-lease-grille"
+
+
+def test_auto_detection_budget_plan():
+    csv = "serie_code,km_min,km_max,bp_hm,bp_om,exercice\nVECTRON,80000,119999,1800,1400,2026\n"
+    assert detecter_type_import(csv) == "budget-plan"
+
+
+def test_auto_detection_flotte():
+    csv = "numero,produit,sous_serie,serie_code,homologations,mise_en_service,km_cumules,statut\n"
+    csv += "LOCO1,TRAXX,DC2,TRAXX,PL;DE,2021-01-01,600000,disponible\n"
+    assert detecter_type_import(csv) == "flotte"
+
+
+def test_auto_detection_separateur_point_virgule():
+    """L'auto-détection doit aussi marcher avec `;`."""
+    csv = "serie_code;km_min;km_max;bp_hm;bp_om;exercice\nVECTRON;80000;119999;1800;1400;2026\n"
+    assert detecter_type_import(csv) == "budget-plan"
+
+
+def test_auto_detection_bom_utf8():
+    csv = "﻿" + "serie_code,duree_min_mois,duree_max_mois,loyer_mensuel\nVECTRON,0,11,20000\n"
+    assert detecter_type_import(csv) == "dry-lease-grille"
+
+
+def test_auto_detection_colonnes_inconnues():
+    csv = "machin,truc,bidule\n1,2,3\n"
+    assert detecter_type_import(csv) is None

@@ -62,11 +62,47 @@ def _parse_int_optionnel(valeur: str | None) -> int | None:
 
 
 def _lecteur(contenu: str) -> csv.DictReader:
-    # BOM UTF-8 fréquent côté Excel : on l'enlève pour ne pas polluer le
-    # nom de la première colonne.
+    """Lecteur CSV tolérant :
+    - mange le BOM UTF-8 (Excel en met toujours un)
+    - détecte automatiquement le séparateur `,` ou `;` (Excel français
+      utilise `;` par défaut parce que `,` sert au décimal)
+    - détecte aussi tabulation et pipe au cas où
+    """
     if contenu.startswith("﻿"):
         contenu = contenu.lstrip("﻿")
-    return csv.DictReader(io.StringIO(contenu))
+    # Sniffer échoue parfois sur des CSV courts : on regarde la 1re ligne
+    # à la main et on pique le séparateur qui apparaît le plus souvent.
+    premiere_ligne = contenu.split("\n", 1)[0]
+    separateurs = {",": premiere_ligne.count(","), ";": premiere_ligne.count(";"),
+                   "\t": premiere_ligne.count("\t"), "|": premiere_ligne.count("|")}
+    separateur = max(separateurs, key=lambda k: separateurs[k])
+    if separateurs[separateur] == 0:
+        separateur = ","
+    return csv.DictReader(io.StringIO(contenu), delimiter=separateur)
+
+
+# Signatures de reconnaissance : colonne caractéristique → type d'import.
+# L'ordre compte : on teste du plus spécifique au plus général.
+SIGNATURES = [
+    ("flotte", {"numero", "produit", "homologations"}),
+    ("flotte", {"numero", "mise_en_service", "km_cumules"}),
+    ("budget-plan", {"serie_code", "bp_hm", "bp_om"}),
+    ("dry-lease-grille", {"serie_code", "duree_min_mois", "loyer_mensuel"}),
+    ("dry-lease-grille", {"serie_code", "loyer_mensuel"}),
+]
+
+
+def detecter_type_import(contenu: str) -> str | None:
+    """Regarde les colonnes de l'en-tête et renvoie "dry-lease-grille",
+    "budget-plan", "flotte" ou None si rien ne correspond."""
+    lecteur = _lecteur(contenu)
+    champs = {(c or "").strip().lower() for c in (lecteur.fieldnames or [])}
+    if not champs:
+        return None
+    for type_import, colonnes_requises in SIGNATURES:
+        if colonnes_requises.issubset(champs):
+            return type_import
+    return None
 
 
 def importer_grille_dry_lease(contenu: str) -> ResultatImport:

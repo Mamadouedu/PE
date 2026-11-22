@@ -46,6 +46,7 @@ from fastapi import UploadFile, File
 
 from .assistant import AnthropicAssistant, Assistant, Message as MessageAssistant, ScriptedAssistant
 from .csv_import import (
+    detecter_type_import,
     importer_budget_plan,
     importer_flotte,
     importer_grille_dry_lease,
@@ -705,6 +706,95 @@ async def importer_locomotives(
         "nb_lignes_lues": resultat.nb_lignes_lues,
         "nb_lignes_importees": resultat.nb_lignes_importees,
         "erreurs": resultat.erreurs,
+    }
+
+
+@app.post("/api/v1/referentiel/brouillons/{numero}/import/auto")
+async def importer_auto_detection(
+    numero: int,
+    fichier: UploadFile = File(..., description="N'importe lequel des 3 CSV (DL, BP, Flotte) — le type est détecté par les colonnes de l'en-tête."),
+    utilisateur: str = Depends(get_utilisateur),
+    referentiel: Referentiel = Depends(get_referentiel),
+    remplacer: bool = False,
+) -> dict:
+    """Import CSV avec auto-détection du type : lit l'en-tête, décide s'il
+    s'agit d'une grille Dry lease, d'un Budget Plan ou d'une Flotte, et
+    aiguille vers l'import correspondant. Accepte les séparateurs `,` et
+    `;` (Excel francophone), le BOM UTF-8 et la virgule décimale."""
+    draft = _brouillon_ou_404(referentiel, numero)
+    contenu = (await fichier.read()).decode("utf-8", errors="replace")
+
+    type_detecte = detecter_type_import(contenu)
+    if type_detecte is None:
+        return {
+            "type_detecte": None,
+            "nb_lignes_lues": 0,
+            "nb_lignes_importees": 0,
+            "erreurs": [
+                "Type de CSV non reconnu. Colonnes attendues : "
+                "grille DL (serie_code, duree_*, loyer_mensuel) / "
+                "BP (serie_code, km_*, bp_hm, bp_om) / "
+                "Flotte (numero, produit, homologations, …)."
+            ],
+        }
+
+    if type_detecte == "dry-lease-grille":
+        r = importer_grille_dry_lease(contenu)
+        if r.nb_lignes_importees > 0:
+            avant = list(draft.grille_dry_lease)
+            draft.grille_dry_lease = r.grille_dry_lease
+            referentiel.enregistrer_modification(
+                draft, "grille_dry_lease", "import_csv", avant, r.grille_dry_lease,
+                utilisateur, f"Import CSV auto-détecté ({r.nb_lignes_importees} lignes)",
+            )
+        return {
+            "type_detecte": type_detecte,
+            "nb_lignes_lues": r.nb_lignes_lues,
+            "nb_lignes_importees": r.nb_lignes_importees,
+            "erreurs": r.erreurs,
+        }
+
+    if type_detecte == "budget-plan":
+        r = importer_budget_plan(contenu)
+        if r.nb_lignes_importees > 0:
+            avant_bp, avant_tr = list(draft.budget_plan), list(draft.tranches_km)
+            draft.budget_plan = r.budget_plan
+            draft.tranches_km = r.tranches_km
+            referentiel.enregistrer_modification(
+                draft, "budget_plan", "import_csv", avant_bp, r.budget_plan,
+                utilisateur, f"Import CSV auto-détecté ({r.nb_lignes_importees} lignes)",
+            )
+            referentiel.enregistrer_modification(
+                draft, "tranches_km", "import_csv", avant_tr, r.tranches_km,
+                utilisateur, "Dérivées du BP importé",
+            )
+        return {
+            "type_detecte": type_detecte,
+            "nb_lignes_lues": r.nb_lignes_lues,
+            "nb_lignes_importees": r.nb_lignes_importees,
+            "nb_tranches_km_deduites": len(r.tranches_km),
+            "erreurs": r.erreurs,
+        }
+
+    # flotte
+    r = importer_flotte(contenu)
+    if r.nb_lignes_importees > 0:
+        avant = dict(draft.flotte)
+        if remplacer:
+            draft.flotte = {l.numero: l for l in r.locomotives}
+        else:
+            for l in r.locomotives:
+                draft.flotte[l.numero] = l
+        action = "import_csv_remplacement" if remplacer else "import_csv_fusion"
+        referentiel.enregistrer_modification(
+            draft, "flotte", action, avant, dict(draft.flotte),
+            utilisateur, f"Import CSV auto-détecté ({r.nb_lignes_importees} lignes)",
+        )
+    return {
+        "type_detecte": type_detecte,
+        "nb_lignes_lues": r.nb_lignes_lues,
+        "nb_lignes_importees": r.nb_lignes_importees,
+        "erreurs": r.erreurs,
     }
 
 

@@ -25,7 +25,7 @@ import type {
 import { FormulaireSerie } from "./admin/FormulaireSerie";
 import { FormulaireClient } from "./admin/FormulaireClient";
 import { FormulaireLocomotive } from "./admin/FormulaireLocomotive";
-import { ImportCSV, type TypeImport } from "./admin/ImportCSV";
+import { ImportCSV } from "./admin/ImportCSV";
 
 interface Props {
   emailKam: string;
@@ -520,18 +520,11 @@ export function AdminReferentiel({ emailKam }: Props) {
 
               {sousOnglet === "imports" && estBrouillon && versionSelectionnee !== null && (
                 <div className="sous-onglet-corps">
-                  <p className="registre-sous-titre" style={{ marginBottom: 16 }}>
-                    Chaque import écrase la section correspondante du brouillon. Les lignes en erreur sont remontées sans bloquer les autres. Encodage UTF-8 attendu, séparateur virgule.
-                  </p>
-                  {(["dry-lease-grille", "budget-plan", "flotte"] as TypeImport[]).map((type) => (
-                    <ImportCSV
-                      key={type}
-                      type={type}
-                      brouillonNumero={versionSelectionnee}
-                      emailKam={emailKam}
-                      onImporte={() => void chargerDetail(versionSelectionnee)}
-                    />
-                  ))}
+                  <ImportCSV
+                    brouillonNumero={versionSelectionnee}
+                    emailKam={emailKam}
+                    onImporte={() => void chargerDetail(versionSelectionnee)}
+                  />
                 </div>
               )}
 
