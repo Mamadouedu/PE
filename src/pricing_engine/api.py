@@ -42,7 +42,9 @@ from .models import (
     TrancheKm,
     Validateur,
 )
+from .assistant import AnthropicAssistant, Assistant, Message as MessageAssistant, ScriptedAssistant
 from .offre_pdf import InMemoryOffreGenereeStore, OffreGeneree, OffreGenereeStore, generer_offre
+from .pipedrive import HttpPipedriveBridge, NoOpPipedriveBridge, PipedriveBridge
 from .referentiel import AnomalieControleQualite, Referentiel, StatutVersion
 
 app = FastAPI(
@@ -151,6 +153,41 @@ _offres_generees = _build_offres_generees_store()
 
 def get_offres_generees() -> OffreGenereeStore:
     return _offres_generees
+
+
+def _build_pipedrive_bridge() -> PipedriveBridge:
+    """Bridge Pipedrive (M3-06). Actif dès que `PIPEDRIVE_API_TOKEN` et
+    `PIPEDRIVE_COMPANY_DOMAIN` sont définis ; sinon NoOp pour laisser
+    l'API tourner en local sans CRM."""
+    token = os.environ.get("PIPEDRIVE_API_TOKEN")
+    domain = os.environ.get("PIPEDRIVE_COMPANY_DOMAIN")
+    if token and domain:
+        return HttpPipedriveBridge(api_token=token, company_domain=domain)
+    return NoOpPipedriveBridge()
+
+
+_pipedrive = _build_pipedrive_bridge()
+
+
+def get_pipedrive() -> PipedriveBridge:
+    return _pipedrive
+
+
+def _build_assistant() -> Assistant:
+    """Assistant conversationnel (M3-08). AnthropicAssistant si une clé API
+    est présente, sinon ScriptedAssistant (répond aux mots-clés usuels)."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if api_key:
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+        return AnthropicAssistant(api_key=api_key, model=model)
+    return ScriptedAssistant()
+
+
+_assistant = _build_assistant()
+
+
+def get_assistant() -> Assistant:
+    return _assistant
 
 
 def get_utilisateur(x_utilisateur: str = Header(..., description="E-mail de l'utilisateur")) -> str:
@@ -280,18 +317,21 @@ def generer_l_offre_pdf(
     utilisateur: str = Depends(get_utilisateur),
     referentiel: Referentiel = Depends(get_referentiel),
     offres_generees: OffreGenereeStore = Depends(get_offres_generees),
+    pipedrive: PipedriveBridge = Depends(get_pipedrive),
 ) -> Response:
     """Génère l'offre PDF numérotée (M3-05). Le PDF ne montre que le prix
     retenu par brique — jamais le catalogue ni le plancher (ça révélerait la
     marge de négociation au client), ni les contrôles internes. Porte la
     mention PROJET tant que `niveau_validation > 0`. Chaque génération est
-    journalisée (M3-06, la part « journal des offres »)."""
+    journalisée (M3-06, la part « journal des offres »), et un deal est
+    poussé dans Pipedrive si l'intégration est configurée (M3-06, part
+    « écriture du deal »)."""
 
     version = referentiel.version_publiee()
     if version is None:
         raise HTTPException(status_code=409, detail="Aucune version du référentiel n'est publiée")
     try:
-        offre, pdf_bytes = generer_offre(offres_generees, version, config, utilisateur)
+        offre, pdf_bytes = generer_offre(offres_generees, version, config, utilisateur, pipedrive=pipedrive)
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -612,6 +652,28 @@ def journal(referentiel: Referentiel = Depends(get_referentiel)) -> list[dict]:
         }
         for e in referentiel.journal
     ]
+
+
+class _AssistantMessageRequest(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class _AssistantChatRequest(BaseModel):
+    messages: list[_AssistantMessageRequest]
+
+
+@app.post("/api/v1/assistant/chat")
+def assistant_chat(
+    body: _AssistantChatRequest = Body(...),
+    assistant: Assistant = Depends(get_assistant),
+) -> dict:
+    """Assistant conversationnel du KAM (M3-08). Historique conversationnel
+    passé en entrée. Branche sur Anthropic si `ANTHROPIC_API_KEY`, sinon
+    sur un fallback déterministe à base de mots-clés."""
+    historique = [MessageAssistant(role=m.role, content=m.content) for m in body.messages]
+    reponse = assistant.repondre(historique)
+    return {"message": reponse.message, "moteur": reponse.moteur}
 
 
 def _brouillon_ou_404(referentiel: Referentiel, numero: int):

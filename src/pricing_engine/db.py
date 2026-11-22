@@ -89,6 +89,11 @@ class OffreGenereeRow(Base):
     version_referentiel: Mapped[int] = mapped_column(Integer, nullable=False)
     montant_mensuel_retenu: Mapped[float] = mapped_column(nullable=False)
     niveau_validation: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Pipedrive (M3-06) — optionnels, remplis seulement si Pipedrive est configuré
+    pipedrive_deal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pipedrive_deal_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    pipedrive_statut: Mapped[str] = mapped_column(String(32), nullable=False, default="non_configure")
+    pipedrive_erreur: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
 
 class JournalRow(Base):
@@ -352,6 +357,10 @@ def _row_to_offre_generee(row: OffreGenereeRow) -> OffreGeneree:
         version_referentiel=row.version_referentiel,
         montant_mensuel_retenu=row.montant_mensuel_retenu,
         niveau_validation=row.niveau_validation,
+        pipedrive_deal_id=row.pipedrive_deal_id,
+        pipedrive_deal_url=row.pipedrive_deal_url,
+        pipedrive_statut=row.pipedrive_statut or "non_configure",
+        pipedrive_erreur=row.pipedrive_erreur,
     )
 
 
@@ -381,6 +390,10 @@ class SqlAlchemyOffreGenereeStore:
                     version_referentiel=offre.version_referentiel,
                     montant_mensuel_retenu=offre.montant_mensuel_retenu,
                     niveau_validation=offre.niveau_validation,
+                    pipedrive_deal_id=offre.pipedrive_deal_id,
+                    pipedrive_deal_url=offre.pipedrive_deal_url,
+                    pipedrive_statut=offre.pipedrive_statut,
+                    pipedrive_erreur=offre.pipedrive_erreur,
                 )
             )
             session.commit()

@@ -72,6 +72,13 @@ class OffreGeneree(BaseModel):
     version_referentiel: int
     montant_mensuel_retenu: float
     niveau_validation: int
+    # Intégration Pipedrive (M3-06) : renseignés si l'offre a été poussée
+    # dans le CRM. `statut` reste `non_configure` tant que PIPEDRIVE_API_TOKEN
+    # n'est pas défini.
+    pipedrive_deal_id: int | None = None
+    pipedrive_deal_url: str | None = None
+    pipedrive_statut: str = "non_configure"
+    pipedrive_erreur: str | None = None
 
 
 class OffreGenereeStore(Protocol):
@@ -108,10 +115,15 @@ def generer_offre(
     version: VersionReferentiel,
     configuration: ConfigurationOffre,
     utilisateur: str,
+    pipedrive=None,  # PipedriveBridge | None, import tardif pour éviter la dépendance circulaire
 ) -> tuple[OffreGeneree, bytes]:
     """Calcule l'offre, lui attribue un numéro, la journalise, puis
     construit le PDF. Lève les mêmes erreurs que `engine.calculer_offre`
-    (`KeyError`, `ValueError`) si la configuration est invalide."""
+    (`KeyError`, `ValueError`) si la configuration est invalide.
+
+    Si `pipedrive` est fourni, pousse aussi le deal dans Pipedrive (M3-06).
+    L'appel est best-effort : un échec Pipedrive n'empêche jamais la
+    génération du PDF — `pipedrive_statut` vaut alors `echec`."""
 
     detail = calculer_offre(version, configuration)
 
@@ -128,6 +140,14 @@ def generer_offre(
         montant_mensuel_retenu=detail.total_retenu_mensuel,
         niveau_validation=detail.niveau_validation,
     )
+
+    if pipedrive is not None:
+        resultat = pipedrive.pousser_deal(enregistree)
+        enregistree.pipedrive_deal_id = resultat.deal_id
+        enregistree.pipedrive_deal_url = resultat.deal_url
+        enregistree.pipedrive_statut = resultat.statut
+        enregistree.pipedrive_erreur = resultat.erreur
+
     store.enregistrer(enregistree)
 
     client = version.clients.get(configuration.client_code)
