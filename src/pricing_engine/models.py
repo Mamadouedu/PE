@@ -101,6 +101,16 @@ class StatutLocomotive(str, Enum):
 
 
 class Locomotive(BaseModel):
+    """Une machine physique de la flotte Akiem.
+
+    Structure réelle : la locomotive appartient à un `produit` (gamme
+    constructeur, ex. TRAXX, VECTRON, EURODUAL), une `sous_serie`
+    (variante technique, ex. DC2, AC, MS2, DE), et est homologuée dans un
+    ou plusieurs pays (`homologations` = codes ISO 3166-1 alpha-2, ex.
+    ["PL", "DE", "AT"]). Le `serie_code` relie la machine à une `Serie`
+    du référentiel pour le calcul des prix.
+    """
+
     numero: str
     serie_code: str
     mise_en_service: date
@@ -109,9 +119,19 @@ class Locomotive(BaseModel):
     hm_16_realisee: bool = False
     statut: StatutLocomotive = StatutLocomotive.DISPONIBLE
     client_code: str | None = None
+    # Métadonnées réelles de la flotte (structure Produit → Série → Modèle)
+    produit: str = Field(default="", description="Gamme constructeur, ex. TRAXX, VECTRON")
+    sous_serie: str = Field(default="", description="Variante technique, ex. DC2, AC, MS2")
+    homologations: list[str] = Field(
+        default_factory=list,
+        description="Codes ISO 3166-1 alpha-2 des pays où la locomotive est homologuée, ex. ['PL', 'DE', 'AT']",
+    )
 
     def age_ans(self, a_date: date) -> float:
         return (a_date - self.mise_en_service).days / 365.25
+
+    def homologuee_dans(self, pays: str) -> bool:
+        return pays.upper() in {p.upper() for p in self.homologations}
 
 
 class Parametres(BaseModel):

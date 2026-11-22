@@ -42,7 +42,14 @@ from .models import (
     TrancheKm,
     Validateur,
 )
+from fastapi import UploadFile, File
+
 from .assistant import AnthropicAssistant, Assistant, Message as MessageAssistant, ScriptedAssistant
+from .csv_import import (
+    importer_budget_plan,
+    importer_flotte,
+    importer_grille_dry_lease,
+)
 from .offre_pdf import InMemoryOffreGenereeStore, OffreGeneree, OffreGenereeStore, generer_offre
 from .pipedrive import HttpPipedriveBridge, NoOpPipedriveBridge, PipedriveBridge
 from .referentiel import AnomalieControleQualite, Referentiel, StatutVersion
@@ -606,6 +613,99 @@ def definir_parametres(
         draft, "parametres", "set", avant, parametres, utilisateur, "Mise à jour paramètres"
     )
     return parametres
+
+
+@app.post("/api/v1/referentiel/brouillons/{numero}/import/dry-lease-grille")
+async def importer_grille_dl(
+    numero: int,
+    fichier: UploadFile = File(..., description="CSV avec en-tête : serie_code, duree_min_mois, duree_max_mois, loyer_mensuel"),
+    utilisateur: str = Depends(get_utilisateur),
+    referentiel: Referentiel = Depends(get_referentiel),
+) -> dict:
+    """Import en masse de la grille Dry lease. Remplace entièrement la
+    grille du brouillon (comme un PUT) ; les lignes en erreur sont
+    collectées et renvoyées sans bloquer les autres."""
+    draft = _brouillon_ou_404(referentiel, numero)
+    contenu = (await fichier.read()).decode("utf-8", errors="replace")
+    resultat = importer_grille_dry_lease(contenu)
+    if resultat.nb_lignes_importees > 0:
+        avant = list(draft.grille_dry_lease)
+        draft.grille_dry_lease = resultat.grille_dry_lease
+        referentiel.enregistrer_modification(
+            draft, "grille_dry_lease", "import_csv", avant, resultat.grille_dry_lease,
+            utilisateur, f"Import CSV ({resultat.nb_lignes_importees} lignes)",
+        )
+    return {
+        "nb_lignes_lues": resultat.nb_lignes_lues,
+        "nb_lignes_importees": resultat.nb_lignes_importees,
+        "erreurs": resultat.erreurs,
+    }
+
+
+@app.post("/api/v1/referentiel/brouillons/{numero}/import/budget-plan")
+async def importer_bp(
+    numero: int,
+    fichier: UploadFile = File(..., description="CSV avec en-tête : serie_code, km_min, km_max, bp_hm, bp_om, exercice"),
+    utilisateur: str = Depends(get_utilisateur),
+    referentiel: Referentiel = Depends(get_referentiel),
+) -> dict:
+    """Import en masse du Budget Plan (BP HM + BP OM). Déduit également
+    les tranches de km et remplace celles du brouillon."""
+    draft = _brouillon_ou_404(referentiel, numero)
+    contenu = (await fichier.read()).decode("utf-8", errors="replace")
+    resultat = importer_budget_plan(contenu)
+    if resultat.nb_lignes_importees > 0:
+        avant_bp = list(draft.budget_plan)
+        avant_tranches = list(draft.tranches_km)
+        draft.budget_plan = resultat.budget_plan
+        draft.tranches_km = resultat.tranches_km
+        referentiel.enregistrer_modification(
+            draft, "budget_plan", "import_csv", avant_bp, resultat.budget_plan,
+            utilisateur, f"Import CSV BP ({resultat.nb_lignes_importees} lignes)",
+        )
+        referentiel.enregistrer_modification(
+            draft, "tranches_km", "import_csv", avant_tranches, resultat.tranches_km,
+            utilisateur, "Dérivées du BP importé",
+        )
+    return {
+        "nb_lignes_lues": resultat.nb_lignes_lues,
+        "nb_lignes_importees": resultat.nb_lignes_importees,
+        "nb_tranches_km_deduites": len(resultat.tranches_km),
+        "erreurs": resultat.erreurs,
+    }
+
+
+@app.post("/api/v1/referentiel/brouillons/{numero}/import/flotte")
+async def importer_locomotives(
+    numero: int,
+    fichier: UploadFile = File(..., description="CSV avec en-tête : numero, produit, sous_serie, serie_code, homologations, mise_en_service, km_cumules, statut"),
+    utilisateur: str = Depends(get_utilisateur),
+    referentiel: Referentiel = Depends(get_referentiel),
+    remplacer: bool = False,
+) -> dict:
+    """Import en masse de la flotte. Par défaut, ajoute aux locos
+    existantes (met à jour si le numéro existe déjà) ; `remplacer=true`
+    écrase complètement la flotte du brouillon."""
+    draft = _brouillon_ou_404(referentiel, numero)
+    contenu = (await fichier.read()).decode("utf-8", errors="replace")
+    resultat = importer_flotte(contenu)
+    if resultat.nb_lignes_importees > 0:
+        avant = dict(draft.flotte)
+        if remplacer:
+            draft.flotte = {l.numero: l for l in resultat.locomotives}
+        else:
+            for l in resultat.locomotives:
+                draft.flotte[l.numero] = l
+        action = "import_csv_remplacement" if remplacer else "import_csv_fusion"
+        referentiel.enregistrer_modification(
+            draft, "flotte", action, avant, dict(draft.flotte),
+            utilisateur, f"Import CSV flotte ({resultat.nb_lignes_importees} lignes)",
+        )
+    return {
+        "nb_lignes_lues": resultat.nb_lignes_lues,
+        "nb_lignes_importees": resultat.nb_lignes_importees,
+        "erreurs": resultat.erreurs,
+    }
 
 
 @app.get("/api/v1/referentiel/brouillons/{numero}/controles-qualite", response_model=list[AnomalieControleQualite])

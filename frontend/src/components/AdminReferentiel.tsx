@@ -25,12 +25,13 @@ import type {
 import { FormulaireSerie } from "./admin/FormulaireSerie";
 import { FormulaireClient } from "./admin/FormulaireClient";
 import { FormulaireLocomotive } from "./admin/FormulaireLocomotive";
+import { ImportCSV, type TypeImport } from "./admin/ImportCSV";
 
 interface Props {
   emailKam: string;
 }
 
-type SousOnglet = "series" | "clients" | "flotte";
+type SousOnglet = "series" | "clients" | "flotte" | "imports";
 
 function formaterDate(iso: string | null): string {
   if (!iso) return "—";
@@ -351,6 +352,11 @@ export function AdminReferentiel({ emailKam }: Props) {
                 <button className={`sous-onglet ${sousOnglet === "flotte" ? "sous-onglet-actif" : ""}`} onClick={() => setSousOnglet("flotte")}>
                   Flotte ({locomotivesActuelles.length})
                 </button>
+                {estBrouillon && (
+                  <button className={`sous-onglet ${sousOnglet === "imports" ? "sous-onglet-actif" : ""}`} onClick={() => setSousOnglet("imports")}>
+                    Imports CSV
+                  </button>
+                )}
               </nav>
 
               {sousOnglet === "series" && (
@@ -469,7 +475,9 @@ export function AdminReferentiel({ emailKam }: Props) {
                       <thead>
                         <tr>
                           <th>Numéro</th>
-                          <th>Série</th>
+                          <th>Produit</th>
+                          <th>Sous-série</th>
+                          <th>Homologations</th>
                           <th>Mise en service</th>
                           <th>Km cumulés</th>
                           <th>Statut</th>
@@ -480,7 +488,19 @@ export function AdminReferentiel({ emailKam }: Props) {
                         {locomotivesActuelles.map((l) => (
                           <tr key={l.numero}>
                             <td className="mono">{l.numero}</td>
-                            <td>{l.serie_code}</td>
+                            <td>{l.produit || "—"}</td>
+                            <td>{l.sous_serie || "—"}</td>
+                            <td>
+                              <div className="homologations-liste">
+                                {(l.homologations ?? []).length === 0 ? (
+                                  <span style={{ color: "var(--fg-muted)" }}>—</span>
+                                ) : (
+                                  (l.homologations ?? []).map((h) => (
+                                    <span key={h} className="pastille-pays-mini">{h}</span>
+                                  ))
+                                )}
+                              </div>
+                            </td>
                             <td>{l.mise_en_service}</td>
                             <td className="num">{l.km_cumules.toLocaleString("fr-FR")}</td>
                             <td>{LIBELLE_STATUT_LOCO[l.statut]}</td>
@@ -495,6 +515,23 @@ export function AdminReferentiel({ emailKam }: Props) {
                       </tbody>
                     </table>
                   )}
+                </div>
+              )}
+
+              {sousOnglet === "imports" && estBrouillon && versionSelectionnee !== null && (
+                <div className="sous-onglet-corps">
+                  <p className="registre-sous-titre" style={{ marginBottom: 16 }}>
+                    Chaque import écrase la section correspondante du brouillon. Les lignes en erreur sont remontées sans bloquer les autres. Encodage UTF-8 attendu, séparateur virgule.
+                  </p>
+                  {(["dry-lease-grille", "budget-plan", "flotte"] as TypeImport[]).map((type) => (
+                    <ImportCSV
+                      key={type}
+                      type={type}
+                      brouillonNumero={versionSelectionnee}
+                      emailKam={emailKam}
+                      onImporte={() => void chargerDetail(versionSelectionnee)}
+                    />
+                  ))}
                 </div>
               )}
 

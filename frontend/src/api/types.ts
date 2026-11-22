@@ -172,6 +172,9 @@ export interface LocomotiveApi {
   mise_en_service: string;
   km_cumules: number;
   statut: StatutLocomotive;
+  produit?: string;
+  sous_serie?: string;
+  homologations?: string[];
 }
 
 export interface ValidateurApi {
