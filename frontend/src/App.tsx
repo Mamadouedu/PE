@@ -5,6 +5,7 @@ import type { ConfigurationOffre } from "./api/types";
 import { versVueKam, type OffreKam } from "./api/offre";
 import { Comparateur } from "./components/Comparateur";
 import { ConfigurateurForm } from "./components/ConfigurateurForm";
+import { AdminReferentiel } from "./components/AdminReferentiel";
 import { RegistreDerogations } from "./components/RegistreDerogations";
 import { RegistreOffres } from "./components/RegistreOffres";
 import { ResultatOffre } from "./components/ResultatOffre";
@@ -20,7 +21,7 @@ function messageErreur(detail: unknown): string {
   return "Une erreur inattendue est survenue.";
 }
 
-type Onglet = "tableau_bord" | "configurateur" | "offres" | "derogations" | "referentiel";
+type Onglet = "tableau_bord" | "configurateur" | "offres" | "derogations" | "referentiel" | "admin";
 
 const ONGLETS: { id: Onglet; libelle: string }[] = [
   { id: "tableau_bord", libelle: "Tableau de bord" },
@@ -28,6 +29,7 @@ const ONGLETS: { id: Onglet; libelle: string }[] = [
   { id: "offres", libelle: "Offres émises" },
   { id: "derogations", libelle: "Dérogations" },
   { id: "referentiel", libelle: "Référentiel" },
+  { id: "admin", libelle: "Administration" },
 ];
 
 export default function App() {
@@ -133,6 +135,7 @@ export default function App() {
         {ongletActif === "offres" && <RegistreOffres />}
         {ongletActif === "derogations" && <RegistreDerogations />}
         {ongletActif === "referentiel" && <VueReferentiel />}
+        {ongletActif === "admin" && <AdminReferentiel emailKam={kamEmail} />}
       </main>
     </div>
   );

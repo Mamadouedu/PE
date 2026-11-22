@@ -1,11 +1,17 @@
 import type {
+  AnomalieQualiteApi,
+  ClientRefApi,
   ConfigurationOffre,
   DerogationApi,
   DetailOffreApi,
   ErreurApi,
   JournalEntryApi,
+  LocomotiveApi,
   OffreGenereeApi,
+  SerieApi,
+  VersionDetailApi,
   VersionPublieeApi,
+  VersionSummaryApi,
 } from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
@@ -110,4 +116,112 @@ export async function obtenirJournalReferentiel(): Promise<JournalEntryApi[]> {
   const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/journal`);
   if (!reponse.ok) await lireErreur(reponse);
   return (await reponse.json()) as JournalEntryApi[];
+}
+
+/* ---------------- Admin référentiel ---------------- */
+
+export async function listerBrouillons(): Promise<VersionSummaryApi[]> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/brouillons`);
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as VersionSummaryApi[];
+}
+
+export async function obtenirVersion(numero: number): Promise<VersionDetailApi> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/brouillons/${numero}`);
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as VersionDetailApi;
+}
+
+export async function creerBrouillon(): Promise<{ numero: number; statut: string }> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/brouillons`, { method: "POST" });
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as { numero: number; statut: string };
+}
+
+export async function definirSerie(
+  numero: number,
+  code: string,
+  serie: SerieApi,
+  utilisateur: string,
+  raison = "Mise à jour série",
+): Promise<SerieApi> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/brouillons/${numero}/series/${code}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Utilisateur": utilisateur },
+    body: JSON.stringify({ serie, raison }),
+  });
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as SerieApi;
+}
+
+export async function supprimerSerie(numero: number, code: string, utilisateur: string): Promise<void> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/brouillons/${numero}/series/${code}`, {
+    method: "DELETE",
+    headers: { "X-Utilisateur": utilisateur },
+  });
+  if (!reponse.ok) await lireErreur(reponse);
+}
+
+export async function definirClient(
+  numero: number,
+  code: string,
+  client: ClientRefApi,
+  utilisateur: string,
+): Promise<ClientRefApi> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/brouillons/${numero}/clients/${code}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Utilisateur": utilisateur },
+    body: JSON.stringify(client),
+  });
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as ClientRefApi;
+}
+
+export async function supprimerClient(numero: number, code: string, utilisateur: string): Promise<void> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/brouillons/${numero}/clients/${code}`, {
+    method: "DELETE",
+    headers: { "X-Utilisateur": utilisateur },
+  });
+  if (!reponse.ok) await lireErreur(reponse);
+}
+
+export async function definirLocomotive(
+  numero: number,
+  numeroLoco: string,
+  loco: LocomotiveApi,
+  utilisateur: string,
+): Promise<LocomotiveApi> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/brouillons/${numero}/flotte/${numeroLoco}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Utilisateur": utilisateur },
+    body: JSON.stringify(loco),
+  });
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as LocomotiveApi;
+}
+
+export async function supprimerLocomotive(
+  numero: number,
+  numeroLoco: string,
+  utilisateur: string,
+): Promise<void> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/brouillons/${numero}/flotte/${numeroLoco}`, {
+    method: "DELETE",
+    headers: { "X-Utilisateur": utilisateur },
+  });
+  if (!reponse.ok) await lireErreur(reponse);
+}
+
+export async function controlesQualite(numero: number): Promise<AnomalieQualiteApi[]> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/brouillons/${numero}/controles-qualite`);
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as AnomalieQualiteApi[];
+}
+
+export async function publierBrouillon(numero: number, utilisateur: string): Promise<void> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/brouillons/${numero}/publier`, {
+    method: "POST",
+    headers: { "X-Utilisateur": utilisateur },
+  });
+  if (!reponse.ok) await lireErreur(reponse);
 }

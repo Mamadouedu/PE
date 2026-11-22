@@ -125,3 +125,79 @@ export interface JournalEntryApi {
   raison: string;
   valide_par: string | null;
 }
+
+export type StatutVersion = "brouillon" | "publie" | "archive";
+
+export interface VersionSummaryApi {
+  numero: number;
+  statut: StatutVersion;
+  date_creation: string | null;
+  date_publication: string | null;
+  publie_par: string | null;
+  nb_series: number;
+  nb_clients: number;
+  nb_locomotives: number;
+  nb_tranches_km: number;
+  nb_grille_dl: number;
+  nb_budget_plan: number;
+  nb_delegations: number;
+}
+
+export type StatutLocomotive = "disponible" | "allouee" | "maintenance" | "reformee";
+
+export interface SerieApi {
+  code: string;
+  valeur_neuve: number;
+  duree_vie_ans: number;
+  vr_fin_vie_taux: number;
+  km_reference_annuel: number;
+  cout_hm_8_ans: number;
+  cout_hm_16_ans: number;
+  om_fixe: number;
+  om_variable_eur_par_km: number;
+  taux_assurance_annuel: number;
+}
+
+export interface ClientRefApi {
+  code: string;
+  nom: string;
+  rating: number;
+  paiement_avance?: boolean;
+  cash_deposit?: number;
+}
+
+export interface LocomotiveApi {
+  numero: string;
+  serie_code: string;
+  mise_en_service: string;
+  km_cumules: number;
+  statut: StatutLocomotive;
+}
+
+export interface ValidateurApi {
+  niveau: number;
+  nom: string;
+  email: string;
+}
+
+export interface VersionDetailApi {
+  numero: number;
+  statut: StatutVersion;
+  date_creation: string | null;
+  date_publication: string | null;
+  publie_par: string | null;
+  series: Record<string, SerieApi>;
+  tranches_km: unknown[];
+  grille_dry_lease: unknown[];
+  budget_plan: unknown[];
+  clients: Record<string, ClientRefApi>;
+  flotte: Record<string, LocomotiveApi>;
+  parametres: Record<string, unknown>;
+  delegations: ValidateurApi[];
+}
+
+export interface AnomalieQualiteApi {
+  code: string;
+  message: string;
+  bloquante: boolean;
+}

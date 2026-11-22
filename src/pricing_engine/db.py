@@ -251,6 +251,11 @@ class SqlAlchemyReferentielBackend:
                 for r in rows
             ]
 
+    def list_versions(self) -> list[VersionReferentiel]:
+        with self._session_factory() as session:
+            rows = session.execute(select(VersionRow).order_by(VersionRow.numero)).scalars().all()
+            return [_payload_to_version(r) for r in rows]
+
 
 def _row_to_derogation(row: DerogationRow) -> Derogation:
     return Derogation(

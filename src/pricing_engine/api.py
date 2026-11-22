@@ -327,6 +327,58 @@ def version_publiee(referentiel: Referentiel = Depends(get_referentiel)) -> dict
     }
 
 
+def _version_to_dict(v) -> dict:
+    """Serialise une VersionReferentiel pour le JSON (admin UI)."""
+    return {
+        "numero": v.numero,
+        "statut": v.statut.value,
+        "date_creation": v.date_creation.isoformat() if v.date_creation else None,
+        "date_publication": v.date_publication.isoformat() if v.date_publication else None,
+        "publie_par": v.publie_par,
+        "series": {k: s.model_dump() for k, s in v.series.items()},
+        "tranches_km": [t.model_dump() for t in v.tranches_km],
+        "grille_dry_lease": [g.model_dump() for g in v.grille_dry_lease],
+        "budget_plan": [b.model_dump() for b in v.budget_plan],
+        "clients": {k: c.model_dump() for k, c in v.clients.items()},
+        "flotte": {k: l.model_dump() for k, l in v.flotte.items()},
+        "parametres": v.parametres.model_dump(),
+        "delegations": [d.model_dump() for d in v.delegations],
+    }
+
+
+@app.get("/api/v1/referentiel/brouillons")
+def lister_brouillons(referentiel: Referentiel = Depends(get_referentiel)) -> list[dict]:
+    """Liste toutes les versions du référentiel (brouillons, publiées,
+    archivées) avec leurs compteurs — pour l'admin UI."""
+    return [
+        {
+            "numero": v.numero,
+            "statut": v.statut.value,
+            "date_creation": v.date_creation.isoformat() if v.date_creation else None,
+            "date_publication": v.date_publication.isoformat() if v.date_publication else None,
+            "publie_par": v.publie_par,
+            "nb_series": len(v.series),
+            "nb_clients": len(v.clients),
+            "nb_locomotives": len(v.flotte),
+            "nb_tranches_km": len(v.tranches_km),
+            "nb_grille_dl": len(v.grille_dry_lease),
+            "nb_budget_plan": len(v.budget_plan),
+            "nb_delegations": len(v.delegations),
+        }
+        for v in sorted(referentiel.versions(), key=lambda x: x.numero, reverse=True)
+    ]
+
+
+@app.get("/api/v1/referentiel/brouillons/{numero}")
+def obtenir_brouillon(numero: int, referentiel: Referentiel = Depends(get_referentiel)) -> dict:
+    """Retourne le contenu complet d'une version du référentiel."""
+    try:
+        v = referentiel.version(numero)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Version {numero} inconnue")
+    return _version_to_dict(v)
+
+
 @app.post("/api/v1/referentiel/brouillons")
 def creer_brouillon(referentiel: Referentiel = Depends(get_referentiel)) -> dict:
     draft = referentiel.nouveau_brouillon()
@@ -431,6 +483,57 @@ def definir_locomotive(
         draft, "flotte", "set", avant, locomotive, utilisateur, "Mise à jour locomotive"
     )
     return locomotive
+
+
+@app.delete("/api/v1/referentiel/brouillons/{numero}/series/{code}", status_code=204)
+def supprimer_serie(
+    numero: int,
+    code: str,
+    utilisateur: str = Depends(get_utilisateur),
+    referentiel: Referentiel = Depends(get_referentiel),
+):
+    draft = _brouillon_ou_404(referentiel, numero)
+    avant = draft.series.pop(code, None)
+    if avant is None:
+        raise HTTPException(status_code=404, detail=f"Série {code} inconnue")
+    referentiel.enregistrer_modification(
+        draft, "series", "delete", avant, None, utilisateur, "Suppression série"
+    )
+    return Response(status_code=204)
+
+
+@app.delete("/api/v1/referentiel/brouillons/{numero}/clients/{code}", status_code=204)
+def supprimer_client(
+    numero: int,
+    code: str,
+    utilisateur: str = Depends(get_utilisateur),
+    referentiel: Referentiel = Depends(get_referentiel),
+):
+    draft = _brouillon_ou_404(referentiel, numero)
+    avant = draft.clients.pop(code, None)
+    if avant is None:
+        raise HTTPException(status_code=404, detail=f"Client {code} inconnu")
+    referentiel.enregistrer_modification(
+        draft, "clients", "delete", avant, None, utilisateur, "Suppression client"
+    )
+    return Response(status_code=204)
+
+
+@app.delete("/api/v1/referentiel/brouillons/{numero}/flotte/{numero_loco}", status_code=204)
+def supprimer_locomotive(
+    numero: int,
+    numero_loco: str,
+    utilisateur: str = Depends(get_utilisateur),
+    referentiel: Referentiel = Depends(get_referentiel),
+):
+    draft = _brouillon_ou_404(referentiel, numero)
+    avant = draft.flotte.pop(numero_loco, None)
+    if avant is None:
+        raise HTTPException(status_code=404, detail=f"Locomotive {numero_loco} inconnue")
+    referentiel.enregistrer_modification(
+        draft, "flotte", "delete", avant, None, utilisateur, "Suppression locomotive"
+    )
+    return Response(status_code=204)
 
 
 @app.put("/api/v1/referentiel/brouillons/{numero}/delegations")

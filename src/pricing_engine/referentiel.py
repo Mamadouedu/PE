@@ -133,6 +133,7 @@ class ReferentielBackend(Protocol):
     def next_numero(self) -> int: ...
     def append_journal(self, entry: EntreeJournal) -> None: ...
     def list_journal(self) -> list[EntreeJournal]: ...
+    def list_versions(self) -> list[VersionReferentiel]: ...
 
 
 class InMemoryReferentielBackend:
@@ -169,6 +170,9 @@ class InMemoryReferentielBackend:
     def list_journal(self) -> list[EntreeJournal]:
         return list(self._journal)
 
+    def list_versions(self) -> list[VersionReferentiel]:
+        return list(self._versions.values())
+
 
 class Referentiel:
     """Dépôt versionné du référentiel pricing.
@@ -189,6 +193,9 @@ class Referentiel:
 
     def version(self, numero: int) -> VersionReferentiel:
         return self._backend.load(numero)
+
+    def versions(self) -> list[VersionReferentiel]:
+        return self._backend.list_versions()
 
     def nouveau_brouillon(self) -> VersionReferentiel:
         base = self._backend.load_published()
