@@ -5,7 +5,10 @@ import type { ConfigurationOffre } from "./api/types";
 import { versVueKam, type OffreKam } from "./api/offre";
 import { Comparateur } from "./components/Comparateur";
 import { ConfigurateurForm } from "./components/ConfigurateurForm";
+import { RegistreDerogations } from "./components/RegistreDerogations";
+import { RegistreOffres } from "./components/RegistreOffres";
 import { ResultatOffre } from "./components/ResultatOffre";
+import { VueReferentiel } from "./components/VueReferentiel";
 import { libelleScenario, MAX_SCENARIOS, type ScenarioComparaison } from "./scenario";
 
 function messageErreur(detail: unknown): string {
@@ -16,7 +19,17 @@ function messageErreur(detail: unknown): string {
   return "Une erreur inattendue est survenue.";
 }
 
+type Onglet = "configurateur" | "offres" | "derogations" | "referentiel";
+
+const ONGLETS: { id: Onglet; libelle: string }[] = [
+  { id: "configurateur", libelle: "Configurateur" },
+  { id: "offres", libelle: "Offres émises" },
+  { id: "derogations", libelle: "Dérogations" },
+  { id: "referentiel", libelle: "Référentiel" },
+];
+
 export default function App() {
+  const [ongletActif, setOngletActif] = useState<Onglet>("configurateur");
   const [offre, setOffre] = useState<OffreKam | null>(null);
   const [configuration, setConfiguration] = useState<ConfigurationOffre | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -62,8 +75,8 @@ export default function App() {
     <div className="page">
       <header className="entete">
         <div>
-          <h1>Configurateur KAM</h1>
-          <p>Plateforme Pricing Akiem — chiffrage full service leasing</p>
+          <h1>Plateforme Pricing Akiem</h1>
+          <p>Moteur de prix full service leasing — configurateur KAM</p>
         </div>
         <label className="identification-kam">
           Votre e-mail
@@ -76,26 +89,47 @@ export default function App() {
         </label>
       </header>
 
+      <nav className="onglets" role="tablist">
+        {ONGLETS.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            role="tab"
+            aria-selected={ongletActif === o.id}
+            className={`onglet ${ongletActif === o.id ? "onglet-actif" : ""}`}
+            onClick={() => setOngletActif(o.id)}
+          >
+            {o.libelle}
+          </button>
+        ))}
+      </nav>
+
       <main className="contenu">
-        <ConfigurateurForm enCours={enCours} onChiffrer={chiffrer} />
+        {ongletActif === "configurateur" && (
+          <>
+            <ConfigurateurForm enCours={enCours} onChiffrer={chiffrer} />
+            <div className="zone-resultat">
+              {erreur && <div className="erreur">{erreur}</div>}
+              {offre && configuration && (
+                <ResultatOffre
+                  offre={offre}
+                  configuration={configuration}
+                  demandeurEmail={kamEmail}
+                  onAjouterAuComparateur={ajouterAuComparateur}
+                  comparateurPlein={scenarios.length >= MAX_SCENARIOS}
+                />
+              )}
+              {!offre && !erreur && (
+                <p className="aide-resultat">Remplissez la configuration et cliquez sur « Chiffrer ».</p>
+              )}
+              <Comparateur scenarios={scenarios} onRetirer={retirerDuComparateur} />
+            </div>
+          </>
+        )}
 
-        <div className="zone-resultat">
-          {erreur && <div className="erreur">{erreur}</div>}
-          {offre && configuration && (
-            <ResultatOffre
-              offre={offre}
-              configuration={configuration}
-              demandeurEmail={kamEmail}
-              onAjouterAuComparateur={ajouterAuComparateur}
-              comparateurPlein={scenarios.length >= MAX_SCENARIOS}
-            />
-          )}
-          {!offre && !erreur && (
-            <p className="aide-resultat">Remplissez la configuration et cliquez sur « Chiffrer ».</p>
-          )}
-
-          <Comparateur scenarios={scenarios} onRetirer={retirerDuComparateur} />
-        </div>
+        {ongletActif === "offres" && <RegistreOffres />}
+        {ongletActif === "derogations" && <RegistreDerogations />}
+        {ongletActif === "referentiel" && <VueReferentiel />}
       </main>
     </div>
   );

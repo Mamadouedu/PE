@@ -613,3 +613,210 @@
   color: var(--erreur);
   font-weight: 600;
 }
+
+/* --- Onglets --- */
+.onglets {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+  overflow-x: auto;
+}
+
+.onglet {
+  background: transparent;
+  color: var(--fg-muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.onglet:hover {
+  color: var(--fg);
+}
+
+.onglet-actif {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* --- Registres (tableaux) --- */
+.registre {
+  grid-column: 1 / -1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 20px 24px;
+}
+
+.registre-entete {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.registre-entete h2 {
+  font-size: 18px;
+}
+
+.registre-sous-titre {
+  color: var(--fg-muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.registre-sous-titre code {
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.bouton-secondaire {
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.bouton-secondaire:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+
+.bouton-secondaire:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.registre-vide {
+  color: var(--fg-muted);
+  padding: 32px 0;
+  text-align: center;
+  font-style: italic;
+}
+
+.registre-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.registre-table thead {
+  background: var(--surface-2);
+}
+
+.registre-table th {
+  text-align: left;
+  padding: 8px 10px;
+  font-weight: 600;
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.registre-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.registre-table tbody tr:hover {
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.registre-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.registre-table .mono {
+  font-family: ui-monospace, "Menlo", "Consolas", monospace;
+  font-size: 12.5px;
+}
+
+.registre-table .justification {
+  max-width: 280px;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.badge-statut {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.badge-en_attente {
+  background: color-mix(in srgb, var(--alerte) 18%, transparent);
+  color: var(--alerte);
+}
+
+.badge-approuvee {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
+}
+
+.badge-rejetee {
+  background: color-mix(in srgb, var(--erreur) 18%, transparent);
+  color: var(--erreur);
+}
+
+/* --- Cartes KPI (Référentiel) --- */
+.cartes-kpi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.carte-kpi {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.carte-kpi-valeur {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1.1;
+}
+
+.carte-kpi-libelle {
+  color: var(--fg);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.carte-kpi-detail {
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  margin-top: 2px;
+}
+
+.sous-titre-journal {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--fg);
+}

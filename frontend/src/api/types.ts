@@ -93,3 +93,35 @@ export interface DerogationApi {
   decideur: string | null;
   commentaire_decision: string | null;
 }
+
+export interface OffreGenereeApi {
+  sequence: number;
+  numero: string;
+  date_generation: string;
+  utilisateur: string;
+  client_code: string;
+  serie_code: string;
+  configuration: ConfigurationOffre;
+  version_referentiel: number;
+  montant_mensuel_retenu: number;
+  niveau_validation: number;
+}
+
+export interface VersionPublieeApi {
+  numero: number;
+  date_publication: string;
+  publie_par: string;
+  nb_series: number;
+  nb_clients: number;
+  nb_locomotives: number;
+}
+
+export interface JournalEntryApi {
+  version_numero: number;
+  horodatage: string;
+  utilisateur: string;
+  table: string;
+  action: string;
+  raison: string;
+  valide_par: string | null;
+}

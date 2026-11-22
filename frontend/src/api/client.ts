@@ -1,4 +1,12 @@
-import type { ConfigurationOffre, DerogationApi, DetailOffreApi, ErreurApi } from "./types";
+import type {
+  ConfigurationOffre,
+  DerogationApi,
+  DetailOffreApi,
+  ErreurApi,
+  JournalEntryApi,
+  OffreGenereeApi,
+  VersionPublieeApi,
+} from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -77,4 +85,29 @@ export async function telechargerOffrePdf(
   const nomFichier = correspondance?.[1] ?? "offre.pdf";
 
   return { blob: await reponse.blob(), nomFichier };
+}
+
+export async function listerDerogations(): Promise<DerogationApi[]> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/derogations`);
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as DerogationApi[];
+}
+
+export async function listerOffresGenerees(): Promise<OffreGenereeApi[]> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/offres`);
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as OffreGenereeApi[];
+}
+
+export async function obtenirVersionPubliee(): Promise<VersionPublieeApi | null> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/publiee`);
+  if (reponse.status === 404) return null;
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as VersionPublieeApi;
+}
+
+export async function obtenirJournalReferentiel(): Promise<JournalEntryApi[]> {
+  const reponse = await fetch(`${BASE_URL}/api/v1/referentiel/journal`);
+  if (!reponse.ok) await lireErreur(reponse);
+  return (await reponse.json()) as JournalEntryApi[];
 }
