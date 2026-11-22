@@ -79,7 +79,7 @@ export function RegistreOffres() {
   async function reTelecharger(offre: OffreGenereeApi) {
     setTelechargement(true);
     try {
-      const { blob, nomFichier } = await telechargerOffrePdf(offre.configuration, offre.utilisateur);
+      const { blob, nomFichier } = await telechargerOffrePdf(offre.configuration);
       telecharger(blob, nomFichier);
     } catch (e) {
       alert(e instanceof ApiError ? `${e.status} : ${e.message}` : "Téléchargement impossible.");

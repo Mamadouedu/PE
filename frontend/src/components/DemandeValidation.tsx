@@ -55,7 +55,7 @@ export function DemandeValidation({ libelleNiveau, configuration, demandeurEmail
     setEnCours(true);
     setErreur(null);
     try {
-      const creee = await demanderDerogation(configuration, justification, demandeurEmail);
+      const creee = await demanderDerogation(configuration, justification);
       setDerogation(creee);
     } catch (e) {
       setErreur(e instanceof ApiError ? String(e.detail) : "Impossible de joindre le moteur de prix.");

@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 import { ApiError, chiffrerOffre } from "./api/client";
+import { aPermission, logout, rafraichirMe, sessionActive, type Role } from "./api/auth";
 import type { ConfigurationOffre } from "./api/types";
 import { versVueKam, type OffreKam } from "./api/offre";
-import { Comparateur } from "./components/Comparateur";
-import { ConfigurateurForm } from "./components/ConfigurateurForm";
 import { AdminReferentiel } from "./components/AdminReferentiel";
 import { Assistant } from "./components/Assistant";
+import { Comparateur } from "./components/Comparateur";
+import { ConfigurateurForm } from "./components/ConfigurateurForm";
+import { Login } from "./components/Login";
 import { RegistreDerogations } from "./components/RegistreDerogations";
 import { RegistreOffres } from "./components/RegistreOffres";
 import { ResultatOffre } from "./components/ResultatOffre";
@@ -31,24 +33,54 @@ type Onglet =
   | "admin"
   | "assistant";
 
-const ONGLETS: { id: Onglet; libelle: string }[] = [
+interface DefinitionOnglet {
+  id: Onglet;
+  libelle: string;
+  permission?: string;
+}
+
+const ONGLETS: DefinitionOnglet[] = [
   { id: "tableau_bord", libelle: "Tableau de bord" },
   { id: "configurateur", libelle: "Configurateur" },
   { id: "offres", libelle: "Offres émises" },
   { id: "derogations", libelle: "Dérogations" },
   { id: "referentiel", libelle: "Référentiel" },
-  { id: "admin", libelle: "Administration" },
+  { id: "admin", libelle: "Administration", permission: "admin_referentiel" },
   { id: "assistant", libelle: "Assistant" },
 ];
 
 export default function App() {
+  const [session, setSession] = useState(sessionActive());
   const [ongletActif, setOngletActif] = useState<Onglet>("tableau_bord");
   const [offre, setOffre] = useState<OffreKam | null>(null);
   const [configuration, setConfiguration] = useState<ConfigurationOffre | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
   const [scenarios, setScenarios] = useState<ScenarioComparaison[]>([]);
-  const [kamEmail, setKamEmail] = useState("");
+
+  useEffect(() => {
+    if (session) {
+      void rafraichirMe().then((u) => {
+        if (!u) setSession(null);
+      });
+    }
+  }, []);
+
+  async function surDeconnexion() {
+    await logout();
+    setSession(null);
+    setOffre(null);
+    setConfiguration(null);
+    setScenarios([]);
+    setOngletActif("tableau_bord");
+  }
+
+  if (!session) {
+    return <Login onConnecte={() => setSession(sessionActive())} />;
+  }
+
+  const kamEmail = session.utilisateur.email;
+  const ongletsVisibles = ONGLETS.filter((o) => !o.permission || aPermission(o.permission));
 
   async function chiffrer(config: ConfigurationOffre) {
     setEnCours(true);
@@ -59,11 +91,8 @@ export default function App() {
       setConfiguration(config);
     } catch (e) {
       setOffre(null);
-      if (e instanceof ApiError) {
-        setErreur(messageErreur(e.detail));
-      } else {
-        setErreur("Impossible de joindre le moteur de prix.");
-      }
+      if (e instanceof ApiError) setErreur(messageErreur(e.detail));
+      else setErreur("Impossible de joindre le moteur de prix.");
     } finally {
       setEnCours(false);
     }
@@ -84,26 +113,27 @@ export default function App() {
     setScenarios((courant) => courant.filter((s) => s.id !== id));
   }
 
+  const role = session.utilisateur.role as Role;
+
   return (
     <div className="page">
       <header className="entete">
         <div>
           <h1>Plateforme Pricing Akiem</h1>
-          <p>Moteur de prix full service leasing — configurateur KAM</p>
+          <p>Moteur de prix full service leasing</p>
         </div>
-        <label className="identification-kam">
-          Votre e-mail
-          <input
-            type="email"
-            value={kamEmail}
-            onChange={(e) => setKamEmail(e.target.value)}
-            placeholder="vous@akiem.com"
-          />
-        </label>
+        <div className="utilisateur-chip">
+          <span className="utilisateur-nom">{session.utilisateur.nom}</span>
+          <span className={`badge-role badge-role-${role}`}>{role}</span>
+          <span className="utilisateur-email">{session.utilisateur.email}</span>
+          <button type="button" className="bouton-deconnexion" onClick={surDeconnexion}>
+            Déconnexion
+          </button>
+        </div>
       </header>
 
       <nav className="onglets" role="tablist">
-        {ONGLETS.map((o) => (
+        {ongletsVisibles.map((o) => (
           <button
             key={o.id}
             type="button"
@@ -133,7 +163,7 @@ export default function App() {
                 />
               )}
               {!offre && !erreur && (
-                <p className="aide-resultat">Remplissez la configuration et cliquez sur « Chiffrer ».</p>
+                <p className="aide-resultat">Remplis la configuration et clique sur « Chiffrer ».</p>
               )}
               <Comparateur scenarios={scenarios} onRetirer={retirerDuComparateur} />
             </div>

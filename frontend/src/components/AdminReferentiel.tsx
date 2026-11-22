@@ -145,7 +145,7 @@ export function AdminReferentiel({ emailKam }: Props) {
     }
     setEnCours(true);
     try {
-      await publierBrouillon(versionSelectionnee, emailKam);
+      await publierBrouillon(versionSelectionnee);
       setMessage({ type: "ok", texte: `Version v${versionSelectionnee} publiée.` });
       await chargerVersions();
       await chargerDetail(versionSelectionnee);
@@ -159,7 +159,7 @@ export function AdminReferentiel({ emailKam }: Props) {
   async function sauverSerie(serie: SerieApi) {
     if (!versionSelectionnee || !emailKam) return;
     try {
-      await definirSerie(versionSelectionnee, serie.code, serie, emailKam);
+      await definirSerie(versionSelectionnee, serie.code, serie);
       await chargerDetail(versionSelectionnee);
       setFormOuvert(false);
       setEditionSerie(null);
@@ -173,7 +173,7 @@ export function AdminReferentiel({ emailKam }: Props) {
     if (!versionSelectionnee || !emailKam) return;
     if (!confirm(`Supprimer la série ${code} ?`)) return;
     try {
-      await supprimerSerie(versionSelectionnee, code, emailKam);
+      await supprimerSerie(versionSelectionnee, code);
       await chargerDetail(versionSelectionnee);
       setMessage({ type: "ok", texte: `Série ${code} supprimée.` });
     } catch (e) {
@@ -184,7 +184,7 @@ export function AdminReferentiel({ emailKam }: Props) {
   async function sauverClient(client: ClientRefApi) {
     if (!versionSelectionnee || !emailKam) return;
     try {
-      await definirClient(versionSelectionnee, client.code, client, emailKam);
+      await definirClient(versionSelectionnee, client.code, client);
       await chargerDetail(versionSelectionnee);
       setFormOuvert(false);
       setEditionClient(null);
@@ -198,7 +198,7 @@ export function AdminReferentiel({ emailKam }: Props) {
     if (!versionSelectionnee || !emailKam) return;
     if (!confirm(`Supprimer le client ${code} ?`)) return;
     try {
-      await supprimerClient(versionSelectionnee, code, emailKam);
+      await supprimerClient(versionSelectionnee, code);
       await chargerDetail(versionSelectionnee);
       setMessage({ type: "ok", texte: `Client ${code} supprimé.` });
     } catch (e) {
@@ -209,7 +209,7 @@ export function AdminReferentiel({ emailKam }: Props) {
   async function sauverLoco(loco: LocomotiveApi) {
     if (!versionSelectionnee || !emailKam) return;
     try {
-      await definirLocomotive(versionSelectionnee, loco.numero, loco, emailKam);
+      await definirLocomotive(versionSelectionnee, loco.numero, loco);
       await chargerDetail(versionSelectionnee);
       setFormOuvert(false);
       setEditionLoco(null);
@@ -223,7 +223,7 @@ export function AdminReferentiel({ emailKam }: Props) {
     if (!versionSelectionnee || !emailKam) return;
     if (!confirm(`Supprimer la locomotive ${num} ?`)) return;
     try {
-      await supprimerLocomotive(versionSelectionnee, num, emailKam);
+      await supprimerLocomotive(versionSelectionnee, num);
       await chargerDetail(versionSelectionnee);
       setMessage({ type: "ok", texte: `Locomotive ${num} supprimée.` });
     } catch (e) {

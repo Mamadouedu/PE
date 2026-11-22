@@ -15,7 +15,7 @@ export function TelechargerPdfButton({ configuration, demandeurEmail }: Props) {
     setEnCours(true);
     setErreur(null);
     try {
-      const { blob, nomFichier } = await telechargerOffrePdf(configuration, demandeurEmail);
+      const { blob, nomFichier } = await telechargerOffrePdf(configuration);
       const url = URL.createObjectURL(blob);
       const lien = document.createElement("a");
       lien.href = url;

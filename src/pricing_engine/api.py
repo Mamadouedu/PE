@@ -44,6 +44,15 @@ from .models import (
 )
 from fastapi import UploadFile, File
 
+from .users import (
+    DUREE_SESSION_SECONDES,
+    InMemorySessionStore,
+    InMemoryUserStore,
+    Role,
+    Utilisateur,
+    hacher_mot_de_passe,
+    verifier_mot_de_passe,
+)
 from .assistant import AnthropicAssistant, Assistant, Message as MessageAssistant, ScriptedAssistant
 from .csv_import import (
     detecter_type_import,
@@ -198,8 +207,99 @@ def get_assistant() -> Assistant:
     return _assistant
 
 
-def get_utilisateur(x_utilisateur: str = Header(..., description="E-mail de l'utilisateur")) -> str:
-    return x_utilisateur
+# ---------------- Store utilisateurs + sessions ----------------
+
+_users = InMemoryUserStore()
+_sessions = InMemorySessionStore()
+
+
+def _seeder_utilisateurs_par_defaut() -> None:
+    """Crée les comptes de démo au démarrage. En vrai, on lira la liste
+    depuis Entra ID / un store persistant ; ici c'est pour que la plateforme
+    marche en local tout de suite."""
+    defauts = [
+        ("admin@akiem.com", "Admin Akiem", Role.ADMIN, "admin"),
+        ("direction@akiem.com", "Direction", Role.DIRECTION, "direction"),
+        ("head@akiem.com", "Head of Pricing", Role.PRICING, "pricing"),
+        ("manager@akiem.com", "Manager", Role.PRICING, "pricing"),
+        ("kam1@akiem.com", "KAM France", Role.KAM, "kam"),
+        ("kam2@akiem.com", "KAM Allemagne", Role.KAM, "kam"),
+        ("kam3@akiem.com", "KAM Pologne", Role.KAM, "kam"),
+    ]
+    for email, nom, role, mdp in defauts:
+        if _users.get(email) is None:
+            _users.creer(Utilisateur(
+                email=email, nom=nom, role=role,
+                hash_mot_de_passe=hacher_mot_de_passe(mdp),
+            ))
+
+
+_seeder_utilisateurs_par_defaut()
+
+
+def get_users():
+    return _users
+
+
+def get_sessions():
+    return _sessions
+
+
+def get_current_user(
+    authorization: str = Header(default="", description="Bearer <token>"),
+    x_utilisateur: str = Header(default="", description="(Compat) e-mail direct, sans auth"),
+) -> Utilisateur:
+    """Résout l'utilisateur courant :
+    - en priorité par `Authorization: Bearer <token>` (session login)
+    - repli sur `X-Utilisateur: email@...` (compat scripts / tests)
+
+    Pour le repli X-Utilisateur, on crée un faux utilisateur avec rôle
+    KAM si l'e-mail n'existe pas dans le store. Ça garde l'API testable
+    sans login explicite pour les scripts seed."""
+    if authorization.startswith("Bearer "):
+        token = authorization[7:]
+        session = _sessions.get(token)
+        if session is None:
+            raise HTTPException(status_code=401, detail="Session invalide ou expirée")
+        utilisateur = _users.get(session.email)
+        if utilisateur is None or not utilisateur.actif:
+            raise HTTPException(status_code=401, detail="Utilisateur désactivé")
+        return utilisateur
+
+    if x_utilisateur:
+        existant = _users.get(x_utilisateur)
+        if existant is not None:
+            return existant
+        # Mode compat : e-mail inconnu → utilisateur jetable KAM
+        return Utilisateur(
+            email=x_utilisateur, nom=x_utilisateur, role=Role.KAM,
+            hash_mot_de_passe="", actif=True,
+        )
+
+    # Mode strict (production) : auth obligatoire, activé par REQUIRE_AUTH=1
+    if os.environ.get("REQUIRE_AUTH", "").lower() in ("1", "true", "yes"):
+        raise HTTPException(status_code=401, detail="Authentification requise")
+    # Mode dev / compat tests : utilisateur anonyme ADMIN (voit tout)
+    return Utilisateur(
+        email="anonymous@akiem.local", nom="Anonymous (dev)", role=Role.ADMIN,
+        hash_mot_de_passe="", actif=True,
+    )
+
+
+def exiger_permission(permission: str):
+    """Dépendance qui refuse les utilisateurs sans la permission."""
+    def _verifier(utilisateur: Utilisateur = Depends(get_current_user)) -> Utilisateur:
+        if not utilisateur.a_permission(permission):
+            raise HTTPException(status_code=403, detail=f"Permission '{permission}' refusée")
+        return utilisateur
+    return _verifier
+
+
+def get_utilisateur(utilisateur: Utilisateur = Depends(get_current_user)) -> str:
+    """Compat : retourne l'e-mail de l'utilisateur courant (résolu par
+    token Bearer, header X-Utilisateur ou fallback anonyme en mode dev
+    quand REQUIRE_AUTH n'est pas défini)."""
+    return utilisateur.email
 
 
 def verifier_secret_webhook(
@@ -227,6 +327,118 @@ class DecisionDerogationRequest(BaseModel):
     decision: Literal["approuvee", "rejetee"]
     decideur: str
     commentaire: str | None = None
+
+
+# ---------------- Endpoints Auth ----------------
+
+
+class _LoginRequest(BaseModel):
+    email: str
+    mot_de_passe: str
+
+
+class _ChangePasswordRequest(BaseModel):
+    ancien_mot_de_passe: str
+    nouveau_mot_de_passe: str
+
+
+class _CreateUserRequest(BaseModel):
+    email: str
+    nom: str
+    role: Role
+    mot_de_passe: str
+
+
+@app.post("/api/v1/auth/login")
+def login(body: _LoginRequest) -> dict:
+    """Vérifie le mot de passe, ouvre une session, renvoie un token Bearer."""
+    utilisateur = _users.get(body.email)
+    if utilisateur is None or not utilisateur.actif:
+        raise HTTPException(status_code=401, detail="Identifiants invalides")
+    if not verifier_mot_de_passe(body.mot_de_passe, utilisateur.hash_mot_de_passe):
+        raise HTTPException(status_code=401, detail="Identifiants invalides")
+    session = _sessions.creer(utilisateur.email)
+    return {
+        "token": session.token,
+        "duree_secondes": DUREE_SESSION_SECONDES,
+        "utilisateur": {
+            "email": utilisateur.email,
+            "nom": utilisateur.nom,
+            "role": utilisateur.role.value,
+            "permissions": sorted(list(__import__("pricing_engine.users", fromlist=["PERMISSIONS"]).PERMISSIONS.get(utilisateur.role, set()))),
+        },
+    }
+
+
+@app.get("/api/v1/auth/me")
+def me(utilisateur: Utilisateur = Depends(get_current_user)) -> dict:
+    from .users import PERMISSIONS
+    return {
+        "email": utilisateur.email,
+        "nom": utilisateur.nom,
+        "role": utilisateur.role.value,
+        "permissions": sorted(list(PERMISSIONS.get(utilisateur.role, set()))),
+    }
+
+
+@app.post("/api/v1/auth/logout")
+def logout(authorization: str = Header(default="")) -> dict:
+    if authorization.startswith("Bearer "):
+        _sessions.revoquer(authorization[7:])
+    return {"ok": True}
+
+
+@app.post("/api/v1/auth/change-password")
+def changer_mot_de_passe(
+    body: _ChangePasswordRequest,
+    utilisateur: Utilisateur = Depends(get_current_user),
+) -> dict:
+    if not verifier_mot_de_passe(body.ancien_mot_de_passe, utilisateur.hash_mot_de_passe):
+        raise HTTPException(status_code=401, detail="Ancien mot de passe incorrect")
+    if len(body.nouveau_mot_de_passe) < 6:
+        raise HTTPException(status_code=422, detail="Nouveau mot de passe trop court (min 6)")
+    utilisateur.hash_mot_de_passe = hacher_mot_de_passe(body.nouveau_mot_de_passe)
+    _users.mettre_a_jour(utilisateur)
+    _sessions.revoquer_pour(utilisateur.email)  # force relogin partout
+    return {"ok": True}
+
+
+@app.get("/api/v1/utilisateurs")
+def lister_utilisateurs(_: Utilisateur = Depends(exiger_permission("gerer_utilisateurs"))) -> list[dict]:
+    return [
+        {"email": u.email, "nom": u.nom, "role": u.role.value, "actif": u.actif}
+        for u in _users.lister()
+    ]
+
+
+@app.post("/api/v1/utilisateurs")
+def creer_utilisateur(
+    body: _CreateUserRequest,
+    _: Utilisateur = Depends(exiger_permission("gerer_utilisateurs")),
+) -> dict:
+    if _users.get(body.email) is not None:
+        raise HTTPException(status_code=409, detail="E-mail déjà pris")
+    if len(body.mot_de_passe) < 6:
+        raise HTTPException(status_code=422, detail="Mot de passe trop court (min 6)")
+    nouveau = Utilisateur(
+        email=body.email, nom=body.nom, role=body.role,
+        hash_mot_de_passe=hacher_mot_de_passe(body.mot_de_passe),
+    )
+    _users.creer(nouveau)
+    return {"email": nouveau.email, "nom": nouveau.nom, "role": nouveau.role.value}
+
+
+@app.delete("/api/v1/utilisateurs/{email}", status_code=204)
+def supprimer_utilisateur(
+    email: str,
+    courant: Utilisateur = Depends(exiger_permission("gerer_utilisateurs")),
+):
+    if email.lower() == courant.email.lower():
+        raise HTTPException(status_code=409, detail="Impossible de supprimer son propre compte")
+    if not _users.supprimer(email):
+        raise HTTPException(status_code=404, detail="Utilisateur inconnu")
+    _sessions.revoquer_pour(email)
+    return Response(status_code=204)
 
 
 @app.post("/api/v1/prix", response_model=DetailOffre)
@@ -275,10 +487,17 @@ def demander_une_derogation(
 
 
 @app.get("/api/v1/derogations", response_model=list[Derogation])
-def lister_les_derogations(derogations: DerogationStore = Depends(get_derogations)) -> list[Derogation]:
-    """Le registre central des dérogations (M4-05)."""
-
-    return derogations.lister()
+def lister_les_derogations(
+    derogations: DerogationStore = Depends(get_derogations),
+    utilisateur: Utilisateur = Depends(get_current_user),
+) -> list[Derogation]:
+    """Registre central des dérogations (M4-05). Filtré sur les demandes
+    du KAM si rôle=KAM ; voit tout si rôle=PRICING/DIRECTION/ADMIN."""
+    toutes = derogations.lister()
+    if utilisateur.a_permission("voir_toutes_derogations"):
+        return toutes
+    email = utilisateur.email.lower()
+    return [d for d in toutes if d.demandeur.lower() == email]
 
 
 @app.get("/api/v1/derogations/{id_}", response_model=Derogation)
@@ -353,11 +572,15 @@ def generer_l_offre_pdf(
 @app.get("/api/v1/offres", response_model=list[OffreGeneree])
 def lister_les_offres_generees(
     offres_generees: OffreGenereeStore = Depends(get_offres_generees),
+    utilisateur: Utilisateur = Depends(get_current_user),
 ) -> list[OffreGeneree]:
-    """Journal des offres générées (M3-06, part « journal » — l'écriture
-    dans Pipedrive reste à faire)."""
-
-    return offres_generees.lister()
+    """Journal des offres générées. Filtré sur les offres du KAM courant
+    si rôle=KAM ; voit tout si rôle=PRICING/DIRECTION/ADMIN."""
+    toutes = offres_generees.lister()
+    if utilisateur.a_permission("voir_toutes_offres"):
+        return toutes
+    email = utilisateur.email.lower()
+    return [o for o in toutes if o.utilisateur.lower() == email]
 
 
 @app.get("/api/v1/referentiel/publiee")
