@@ -1,37 +1,69 @@
 import { describe, expect, it } from "vitest";
-import type { QuoteResponse } from "./types";
+import type { DetailOffreApi } from "./types";
 import { versVueKam } from "./offre";
 
 // Fixture minimale mais réaliste : une réponse API complète, avec des coûts
 // et des marges bien distincts des prix, pour que les assertions ci-dessous
-// aient un sens (si `cost` valait la même chose que `catalogPrice`, une
+// aient un sens (si `cout` valait la même chose que `prix_catalogue`, une
 // fuite ne se verrait pas).
-function offreApiDeTest(): QuoteResponse {
+function offreApiDeTest(): DetailOffreApi {
   return {
-    quoteId: "dd6de88a-e33d-4da8-9af0-7dda4ac25d26",
-    versionNumber: 1,
-    status: "Calculated",
-    priceBookNumber: 1,
-    lines: [
-      { line: "DryLease", cost: 15_000, catalogPrice: 20_000, floor: 18_000, negotiatedPrice: null, retainedPrice: 20_000, status: "Ok" },
-      { line: "HeavyMaintenance", cost: 1_822.91, catalogPrice: 2_096.35, floor: 2_000, negotiatedPrice: null, retainedPrice: 2_096.35, status: "Ok" },
-      { line: "OperatingMaintenance", cost: 1_000, catalogPrice: 1_500, floor: 1_500, negotiatedPrice: null, retainedPrice: 1_500, status: "Ok" },
-      { line: "Insurance", cost: 4_100, catalogPrice: 4_305, floor: 4_100, negotiatedPrice: null, retainedPrice: 4_305, status: "Ok" },
-    ],
-    residualValueAtStart: 1_700_000,
-    residualValueAtEnd: 1_580_000,
-    monthlyValueLoss: 5_000,
-    additionalMileagePricePerKm: 0.29,
-    totalCatalogPerUnitMonthly: 27_901.35,
-    totalRetainedPerUnitMonthly: 27_901.35,
-    totalRetainedMonthly: 27_901.35,
-    totalRetainedContract: 669_632.4,
-    globalDiscount: 0,
-    monthlyReferenceCost: 11_922.91,
-    validationLevel: 0,
-    validationLevelReasons: ["Dans les règles : validation KAM (niveau 0)"],
-    controls: [{ code: "C1_DUREE_CAMPAGNE", label: "Durée ≤ durée maximale de campagne", ok: true, detail: "ok" }],
-    allControlsOk: true,
+    version_referentiel: 1,
+    par_brique: {
+      DL: {
+        brique: "DL",
+        cout: 15_000,
+        prix_catalogue: 20_000,
+        plancher: 18_000,
+        prix_negocie: null,
+        prix_retenu: 20_000,
+        statut: "ok",
+      },
+      HM: {
+        brique: "HM",
+        cout: 1_822.91,
+        prix_catalogue: 2_096.35,
+        plancher: 2_000,
+        prix_negocie: null,
+        prix_retenu: 2_096.35,
+        statut: "ok",
+      },
+      OM: {
+        brique: "OM",
+        cout: 1_000,
+        prix_catalogue: 1_500,
+        plancher: 1_500,
+        prix_negocie: null,
+        prix_retenu: 1_500,
+        statut: "ok",
+      },
+      ASSURANCE: {
+        brique: "ASSURANCE",
+        cout: 4_100,
+        prix_catalogue: 4_305,
+        plancher: 4_100,
+        prix_negocie: null,
+        prix_retenu: 4_305,
+        statut: "ok",
+      },
+    },
+    etapes_calcul: [{ libelle: "Coût mensuel HM (avant marge)", valeur: 1_822.91 }],
+    valeur_residuelle_debut: 1_700_000,
+    valeur_residuelle_fin: 1_580_000,
+    perte_valeur_totale: 120_000,
+    perte_valeur_mensuelle: 5_000,
+    prix_km_supplementaire: 0.29,
+    total_catalogue_par_loco_mensuel: 27_901.35,
+    total_retenu_par_loco_mensuel: 27_901.35,
+    total_plancher_par_loco_mensuel: 25_600,
+    total_retenu_mensuel: 27_901.35,
+    total_retenu_contrat: 669_632.4,
+    remise_globale: 0,
+    cout_reference_mensuel: 11_922.91,
+    niveau_validation: 0,
+    motifs_niveau_validation: ["Dans les règles : validation KAM (niveau 0)"],
+    controles: [{ code: "C1", libelle: "Durée ≤ durée maximale de campagne", ok: true, detail: "ok" }],
+    tous_controles_ok: true,
   };
 }
 
@@ -46,16 +78,16 @@ describe("versVueKam", () => {
     expect(serialise).not.toContain("1822.91");
     expect(serialise).not.toContain("11922.91");
 
-    // Et structurellement : aucune ligne de brique ne porte de champ `cost`.
+    // Et structurellement : aucune ligne de brique ne porte de champ `cout`.
     for (const ligne of vue.briques) {
-      expect(ligne).not.toHaveProperty("cost");
+      expect(ligne).not.toHaveProperty("cout");
     }
   });
 
   it("reprend les prix et le niveau de validation utiles au KAM", () => {
     const vue = versVueKam(offreApiDeTest());
 
-    expect(vue.briques.map((b) => b.brique)).toEqual(["DryLease", "HeavyMaintenance", "OperatingMaintenance", "Insurance"]);
+    expect(vue.briques.map((b) => b.brique)).toEqual(["DL", "HM", "OM", "ASSURANCE"]);
     expect(vue.briques[0].prixRetenu).toBe(20_000);
     expect(vue.totalMensuel).toBe(27_901.35);
     expect(vue.niveauValidation).toBe(0);
@@ -65,7 +97,7 @@ describe("versVueKam", () => {
 
   it("signale qu'un envoi direct n'est pas possible dès que le niveau dépasse 0", () => {
     const api = offreApiDeTest();
-    api.validationLevel = 2;
+    api.niveau_validation = 2;
 
     const vue = versVueKam(api);
 

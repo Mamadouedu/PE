@@ -1,4 +1,5 @@
 import type { OffreKam } from "../api/offre";
+import type { ConfigurationOffre } from "../api/types";
 import { DemandeValidation } from "./DemandeValidation";
 import { JaugeNegociation } from "./JaugeNegociation";
 import { TelechargerPdfButton } from "./TelechargerPdfButton";
@@ -23,6 +24,7 @@ const formatPourcent = new Intl.NumberFormat("fr-FR", {
 
 interface Props {
   offre: OffreKam;
+  configuration: ConfigurationOffre;
   demandeurEmail: string;
   onAjouterAuComparateur: () => void;
   comparateurPlein: boolean;
@@ -30,6 +32,7 @@ interface Props {
 
 export function ResultatOffre({
   offre,
+  configuration,
   demandeurEmail,
   onAjouterAuComparateur,
   comparateurPlein,
@@ -43,7 +46,7 @@ export function ResultatOffre({
         {comparateurPlein && (
           <span className="aide-comparateur">le plus ancien scénario sera remplacé</span>
         )}
-        <TelechargerPdfButton />
+        <TelechargerPdfButton configuration={configuration} demandeurEmail={demandeurEmail} />
       </div>
 
       {!offre.envoiDirectPossible && (
@@ -54,8 +57,7 @@ export function ResultatOffre({
           </p>
           <DemandeValidation
             libelleNiveau={offre.libelleNiveau}
-            quoteId={offre.quoteId}
-            versionNumber={offre.versionNumber}
+            configuration={configuration}
             demandeurEmail={demandeurEmail}
           />
         </div>

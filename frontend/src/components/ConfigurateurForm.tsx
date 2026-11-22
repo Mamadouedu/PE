@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
-import { listerCampagnes, listerModeles } from "../api/client";
-import type { CalculateQuoteRequest, CampaignResponse, ModelSummaryResponse, PriceLine } from "../api/types";
-import { LIBELLE_PRICE_LINE } from "../api/types";
+import { useState } from "react";
+import type { Brique, ConfigurationOffre } from "../api/types";
+import { LIBELLE_BRIQUE } from "../api/types";
 
-const TOUTES_LIGNES: PriceLine[] = ["DryLease", "HeavyMaintenance", "OperatingMaintenance", "Insurance"];
+const TOUTES_BRIQUES: Brique[] = ["DL", "HM", "OM", "ASSURANCE"];
 
 function aujourdHui(): string {
   return new Date().toISOString().slice(0, 10);
@@ -11,16 +10,13 @@ function aujourdHui(): string {
 
 interface Props {
   enCours: boolean;
-  onChiffrer: (requete: CalculateQuoteRequest) => void;
+  onChiffrer: (config: ConfigurationOffre) => void;
 }
 
 export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
-  const [modeles, setModeles] = useState<ModelSummaryResponse[]>([]);
-  const [campagnes, setCampagnes] = useState<CampaignResponse[]>([]);
-  const [chargementReferentiel, setChargementReferentiel] = useState(true);
-
-  const [customerCode, setCustomerCode] = useState("CLIENTOK");
-  const [modelCode, setModelCode] = useState("");
+  const [clientCode, setClientCode] = useState("CLIENTOK");
+  const [serieCode, setSerieCode] = useState("VECTRON");
+  const [locomotiveNumero, setLocomotiveNumero] = useState("");
   const [ageDebutAns, setAgeDebutAns] = useState("5");
   const [kmCumulesDebut, setKmCumulesDebut] = useState("600000");
   const [hm8Realisee, setHm8Realisee] = useState(false);
@@ -29,34 +25,21 @@ export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
   const [dureeMois, setDureeMois] = useState("24");
   const [quantite, setQuantite] = useState("1");
   const [dateDebut, setDateDebut] = useState(aujourdHui());
-  const [campagneCode, setCampagneCode] = useState("");
-  const [lignesIncluses, setLignesIncluses] = useState<Set<PriceLine>>(new Set(TOUTES_LIGNES));
-  const [prixNegocies, setPrixNegocies] = useState<Partial<Record<PriceLine, string>>>({});
+  const [campagne, setCampagne] = useState(false);
+  const [briquesIncluses, setBriquesIncluses] = useState<Set<Brique>>(
+    new Set(TOUTES_BRIQUES),
+  );
+  const [prixNegocies, setPrixNegocies] = useState<Partial<Record<Brique, string>>>({});
 
-  useEffect(() => {
-    let annule = false;
-    Promise.all([listerModeles(), listerCampagnes()])
-      .then(([listeModeles, listeCampagnes]) => {
-        if (annule) return;
-        setModeles(listeModeles);
-        setCampagnes(listeCampagnes);
-        if (listeModeles.length > 0) setModelCode(listeModeles[0].modelCode);
-      })
-      .finally(() => {
-        if (!annule) setChargementReferentiel(false);
-      });
-    return () => {
-      annule = true;
-    };
-  }, []);
+  const aLocomotive = locomotiveNumero.trim().length > 0;
 
-  function basculerLigne(ligne: PriceLine) {
-    setLignesIncluses((courant) => {
+  function basculerBrique(brique: Brique) {
+    setBriquesIncluses((courant) => {
       const suivant = new Set(courant);
-      if (suivant.has(ligne)) {
-        suivant.delete(ligne);
+      if (suivant.has(brique)) {
+        suivant.delete(brique);
       } else {
-        suivant.add(ligne);
+        suivant.add(brique);
       }
       return suivant;
     });
@@ -65,109 +48,116 @@ export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
   function soumettre(evenement: React.FormEvent) {
     evenement.preventDefault();
 
-    const negocies: Partial<Record<PriceLine, number>> = {};
-    for (const ligne of TOUTES_LIGNES) {
-      const valeur = prixNegocies[ligne];
+    const negocies: Partial<Record<Brique, number>> = {};
+    for (const brique of TOUTES_BRIQUES) {
+      const valeur = prixNegocies[brique];
       if (valeur !== undefined && valeur.trim() !== "") {
-        negocies[ligne] = Number(valeur);
+        negocies[brique] = Number(valeur);
       }
     }
 
-    const requete: CalculateQuoteRequest = {
-      customerCode: customerCode.trim(),
-      modelCode,
-      annualMileageKm: Number(kmAnnuel),
-      durationMonths: Number(dureeMois),
-      quantity: Number(quantite),
-      startDate: dateDebut,
-      ageAtStartYears: Number(ageDebutAns),
-      cumulativeMileageAtStartKm: Number(kmCumulesDebut),
-      heavyMaintenance8Done: hm8Realisee,
-      heavyMaintenance16Done: hm16Realisee,
-      includedLines: Array.from(lignesIncluses),
-      negotiatedPrices: negocies,
-      campaignCode: campagneCode.trim() === "" ? null : campagneCode,
+    const config: ConfigurationOffre = {
+      client_code: clientCode.trim(),
+      serie_code: serieCode.trim(),
+      locomotive_numero: aLocomotive ? locomotiveNumero.trim() : null,
+      km_annuel: Number(kmAnnuel),
+      duree_mois: Number(dureeMois),
+      quantite: Number(quantite),
+      date_debut: dateDebut,
+      briques_incluses: Array.from(briquesIncluses),
+      prix_negocies: negocies,
+      campagne,
+      ...(aLocomotive
+        ? {}
+        : {
+            age_debut_ans: Number(ageDebutAns),
+            km_cumules_debut: Number(kmCumulesDebut),
+            hm_8_realisee: hm8Realisee,
+            hm_16_realisee: hm16Realisee,
+          }),
     };
 
-    onChiffrer(requete);
+    onChiffrer(config);
   }
 
   return (
     <form className="configurateur-form" onSubmit={soumettre}>
       <fieldset>
-        <legend>Client et modèle</legend>
+        <legend>Client et série</legend>
 
         <label>
           Client
           <input
-            value={customerCode}
-            onChange={(e) => setCustomerCode(e.target.value)}
+            value={clientCode}
+            onChange={(e) => setClientCode(e.target.value)}
             placeholder="ex. CLIENTOK"
             required
           />
         </label>
 
         <label>
-          Modèle
-          {modeles.length > 0 ? (
-            <select value={modelCode} onChange={(e) => setModelCode(e.target.value)} required>
-              {modeles.map((m) => (
-                <option key={m.modelCode} value={m.modelCode}>
-                  {m.name} ({m.modelCode})
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              value={modelCode}
-              onChange={(e) => setModelCode(e.target.value)}
-              placeholder="ex. VECTRON"
-              disabled={chargementReferentiel}
-              required
-            />
-          )}
+          Série
+          <input
+            value={serieCode}
+            onChange={(e) => setSerieCode(e.target.value)}
+            placeholder="ex. VECTRON"
+            required
+          />
         </label>
 
-        <div className="sous-champs">
-          <p className="aide">Âge et kilométrage de départ (saisis à la main).</p>
-          <label>
-            Âge au début (années)
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              value={ageDebutAns}
-              onChange={(e) => setAgeDebutAns(e.target.value)}
-              required
-            />
-          </label>
-          <label>
-            Km cumulés au début
-            <input
-              type="number"
-              min="0"
-              value={kmCumulesDebut}
-              onChange={(e) => setKmCumulesDebut(e.target.value)}
-              required
-            />
-          </label>
-          <label className="case-a-cocher">
-            <input
-              type="checkbox"
-              checked={hm8Realisee}
-              onChange={(e) => setHm8Realisee(e.target.checked)}
-            />
-            HM 8 ans déjà réalisée
-          </label>
-          <label className="case-a-cocher">
-            <input
-              type="checkbox"
-              checked={hm16Realisee}
-              onChange={(e) => setHm16Realisee(e.target.checked)}
-            />
-            HM 16 ans déjà réalisée
-          </label>
-        </div>
+        <label>
+          Locomotive de la flotte (optionnel)
+          <input
+            value={locomotiveNumero}
+            onChange={(e) => setLocomotiveNumero(e.target.value)}
+            placeholder="numéro, ou laisser vide"
+          />
+        </label>
+
+        {!aLocomotive && (
+          <div className="sous-champs">
+            <p className="aide">
+              Sans locomotive affectée : âge et kilométrage de départ saisis à la main.
+            </p>
+            <label>
+              Âge au début (années)
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                value={ageDebutAns}
+                onChange={(e) => setAgeDebutAns(e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Km cumulés au début
+              <input
+                type="number"
+                min="0"
+                value={kmCumulesDebut}
+                onChange={(e) => setKmCumulesDebut(e.target.value)}
+                required
+              />
+            </label>
+            <label className="case-a-cocher">
+              <input
+                type="checkbox"
+                checked={hm8Realisee}
+                onChange={(e) => setHm8Realisee(e.target.checked)}
+              />
+              HM 8 ans déjà réalisée
+            </label>
+            <label className="case-a-cocher">
+              <input
+                type="checkbox"
+                checked={hm16Realisee}
+                onChange={(e) => setHm16Realisee(e.target.checked)}
+              />
+              HM 16 ans déjà réalisée
+            </label>
+          </div>
+        )}
       </fieldset>
 
       <fieldset>
@@ -218,30 +208,27 @@ export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
           />
         </label>
 
-        <label>
-          Campagne commerciale (optionnel)
-          <select value={campagneCode} onChange={(e) => setCampagneCode(e.target.value)}>
-            <option value="">Aucune</option>
-            {campagnes.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.name} ({c.code})
-              </option>
-            ))}
-          </select>
+        <label className="case-a-cocher">
+          <input
+            type="checkbox"
+            checked={campagne}
+            onChange={(e) => setCampagne(e.target.checked)}
+          />
+          Offre rattachée à une campagne commerciale
         </label>
       </fieldset>
 
       <fieldset>
         <legend>Briques incluses</legend>
         <div className="briques-incluses">
-          {TOUTES_LIGNES.map((ligne) => (
-            <label key={ligne} className="case-a-cocher">
+          {TOUTES_BRIQUES.map((brique) => (
+            <label key={brique} className="case-a-cocher">
               <input
                 type="checkbox"
-                checked={lignesIncluses.has(ligne)}
-                onChange={() => basculerLigne(ligne)}
+                checked={briquesIncluses.has(brique)}
+                onChange={() => basculerBrique(brique)}
               />
-              {LIBELLE_PRICE_LINE[ligne]}
+              {LIBELLE_BRIQUE[brique]}
             </label>
           ))}
         </div>
@@ -250,18 +237,18 @@ export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
       <fieldset>
         <legend>Prix négociés (optionnel — vide = prix catalogue)</legend>
         <div className="prix-negocies">
-          {TOUTES_LIGNES.map((ligne) => (
-            <label key={ligne}>
-              {LIBELLE_PRICE_LINE[ligne]}
+          {TOUTES_BRIQUES.map((brique) => (
+            <label key={brique}>
+              {LIBELLE_BRIQUE[brique]}
               <input
                 type="number"
                 min="0"
                 step="0.01"
-                value={prixNegocies[ligne] ?? ""}
+                value={prixNegocies[brique] ?? ""}
                 onChange={(e) =>
-                  setPrixNegocies((courant) => ({ ...courant, [ligne]: e.target.value }))
+                  setPrixNegocies((courant) => ({ ...courant, [brique]: e.target.value }))
                 }
-                disabled={!lignesIncluses.has(ligne)}
+                disabled={!briquesIncluses.has(brique)}
                 placeholder="catalogue"
               />
             </label>
@@ -269,7 +256,7 @@ export function ConfigurateurForm({ enCours, onChiffrer }: Props) {
         </div>
       </fieldset>
 
-      <button type="submit" disabled={enCours || chargementReferentiel || !modelCode}>
+      <button type="submit" disabled={enCours}>
         {enCours ? "Calcul en cours…" : "Chiffrer"}
       </button>
     </form>

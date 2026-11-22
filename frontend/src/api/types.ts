@@ -1,130 +1,95 @@
-// Types côté KAM pour l'API .NET (PricingHub). Contrats en camelCase côté
-// JSON (convention par défaut d'ASP.NET Core Minimal API), énumérations
-// sérialisées comme chaînes PascalCase (JsonStringEnumConverter côté API).
-//
-// `QuoteResponse` (back-end) porte aussi `lines[].cost` (coût de revient) —
-// jamais importé au-delà de `offre.ts` : les coûts et marges ne sont pas
-// visibles des KAM (M3-07). Voir `offre.ts` pour l'adaptation qui le filtre.
+// Types côté KAM : un sous-ensemble volontairement restreint de ce que
+// l'API renvoie. `DetailOffre` (back-end) porte aussi `cout`, `etapes_calcul`
+// et `cout_reference_mensuel` — jamais importés ici : les coûts et marges ne
+// sont pas visibles des KAM (M3-07). Voir `offre.ts` pour l'adaptation.
 
-export type PriceLine = "DryLease" | "HeavyMaintenance" | "OperatingMaintenance" | "Insurance";
+export type Brique = "DL" | "HM" | "OM" | "ASSURANCE";
 
-export const LIBELLE_PRICE_LINE: Record<PriceLine, string> = {
-  DryLease: "Dry lease",
-  HeavyMaintenance: "Heavy maintenance",
-  OperatingMaintenance: "Operation maintenance",
-  Insurance: "Assurance",
+export const LIBELLE_BRIQUE: Record<Brique, string> = {
+  DL: "Dry lease",
+  HM: "Heavy maintenance",
+  OM: "Operation maintenance",
+  ASSURANCE: "Assurance",
 };
 
-export type QuoteLineStatus = "Ok" | "Alert" | "BelowFloor" | "Excluded";
+export type StatutBrique = "ok" | "alerte" | "sous_plancher" | "exclue";
 
-export type QuoteStatus = "Draft" | "Calculated" | "Submitted" | "Approved" | "Rejected";
-
-export type ApprovalStatus = "Pending" | "Approved" | "Rejected";
-
-// Entrée du calcul d'offre — équivalent de `ConfigurationOffre` côté Python.
-// Pas de `locomotiveNumero` : il n'y a pas d'agrégat Locomotive/Flotte dans
-// le domaine .NET (le contrôle C8 reste toujours "hors contrôle", voir
-// PreSendControlsEvaluator côté API) ; âge et kilométrage sont donc
-// toujours saisis à la main.
-export interface CalculateQuoteRequest {
-  customerCode: string;
-  modelCode: string;
-  annualMileageKm: number;
-  durationMonths: number;
-  quantity: number;
-  startDate: string;
-  ageAtStartYears: number;
-  cumulativeMileageAtStartKm: number;
-  heavyMaintenance8Done: boolean;
-  heavyMaintenance16Done: boolean;
-  includedLines: PriceLine[] | null;
-  negotiatedPrices: Partial<Record<PriceLine, number>> | null;
-  campaignCode: string | null;
+export interface ConfigurationOffre {
+  client_code: string;
+  serie_code: string;
+  locomotive_numero?: string | null;
+  km_annuel: number;
+  duree_mois: number;
+  quantite: number;
+  date_debut: string;
+  briques_incluses: Brique[];
+  prix_negocies: Partial<Record<Brique, number>>;
+  age_debut_ans?: number | null;
+  km_cumules_debut?: number | null;
+  hm_8_realisee?: boolean;
+  hm_16_realisee?: boolean;
+  campagne?: boolean;
 }
 
-export interface QuoteLineResponse {
-  line: PriceLine;
-  cost: number;
-  catalogPrice: number;
-  floor: number;
-  negotiatedPrice: number | null;
-  retainedPrice: number;
-  status: QuoteLineStatus;
+export interface DetailBriqueApi {
+  brique: Brique;
+  cout: number;
+  prix_catalogue: number;
+  plancher: number;
+  prix_negocie: number | null;
+  prix_retenu: number;
+  statut: StatutBrique;
 }
 
-export interface ControlResultResponse {
+export interface ResultatControleApi {
   code: string;
-  label: string;
+  libelle: string;
   ok: boolean;
   detail: string;
 }
 
-// Sortie du calcul d'offre — équivalent de `DetailOffreApi` côté Python,
-// plus l'identité et la version de l'offre persistée (le back-end .NET
-// persiste chaque calcul, contrairement au prototype Python).
-export interface QuoteResponse {
-  quoteId: string;
-  versionNumber: number;
-  status: QuoteStatus;
-  priceBookNumber: number;
-  lines: QuoteLineResponse[];
-  residualValueAtStart: number;
-  residualValueAtEnd: number;
-  monthlyValueLoss: number;
-  additionalMileagePricePerKm: number;
-  totalCatalogPerUnitMonthly: number;
-  totalRetainedPerUnitMonthly: number;
-  totalRetainedMonthly: number;
-  totalRetainedContract: number;
-  globalDiscount: number;
-  monthlyReferenceCost: number;
-  validationLevel: number;
-  validationLevelReasons: string[];
-  controls: ControlResultResponse[];
-  allControlsOk: boolean;
+export interface DetailOffreApi {
+  version_referentiel: number;
+  par_brique: Record<Brique, DetailBriqueApi>;
+  etapes_calcul: { libelle: string; valeur: number }[];
+  valeur_residuelle_debut: number;
+  valeur_residuelle_fin: number;
+  perte_valeur_totale: number;
+  perte_valeur_mensuelle: number;
+  prix_km_supplementaire: number;
+  total_catalogue_par_loco_mensuel: number;
+  total_retenu_par_loco_mensuel: number;
+  total_plancher_par_loco_mensuel: number;
+  total_retenu_mensuel: number;
+  total_retenu_contrat: number;
+  remise_globale: number;
+  cout_reference_mensuel: number;
+  niveau_validation: number;
+  motifs_niveau_validation: string[];
+  controles: ResultatControleApi[];
+  tous_controles_ok: boolean;
 }
 
-export interface ModelSummaryResponse {
-  modelCode: string;
-  seriesCode: string;
-  name: string;
-  newValue: number;
-}
-
-export interface CampaignResponse {
-  code: string;
-  name: string;
-  maxDurationMonths: number | null;
-  startDate: string;
-  endDate: string | null;
-}
-
-// Les erreurs de l'API .NET sont systématiquement `{ "error": "..." }"`
-// (Results.UnprocessableEntity/Conflict/NotFound avec un objet anonyme),
-// à la différence du `{ "detail": ... }` de FastAPI côté Python.
 export interface ErreurApi {
-  error: string;
+  detail: unknown;
 }
 
-// Demande de dérogation (M4-02) — équivalent de `DerogationApi` côté
-// Python, mais liée à une offre déjà calculée et persistée (`quoteId` +
-// `quoteVersion`) plutôt qu'à une configuration brute : le back-end .NET
-// ne recalcule rien, il relit l'offre existante.
-export interface ApprovalRequestResponse {
-  number: number;
-  status: ApprovalStatus;
-  validationLevel: number;
-  requestedBy: string;
+export type StatutDerogation = "en_attente" | "approuvee" | "rejetee";
+
+export interface DerogationApi {
+  id: number;
+  statut: StatutDerogation;
+  niveau: number;
+  demandeur: string;
   justification: string;
-  quoteId: string;
-  quoteVersion: number;
-  priceBookNumber: number;
-  customerCode: string;
-  modelCode: string;
-  monthlyRetainedAmount: number;
-  validatorEmail: string | null;
-  requestedAt: string;
-  decidedAt: string | null;
-  decidedBy: string | null;
-  decisionComment: string | null;
+  configuration: ConfigurationOffre;
+  version_referentiel: number;
+  client_code: string;
+  serie_code: string;
+  montant_mensuel_retenu: number;
+  validateur_email: string | null;
+  date_demande: string;
+  date_decision: string | null;
+  decideur: string | null;
+  commentaire_decision: string | null;
 }

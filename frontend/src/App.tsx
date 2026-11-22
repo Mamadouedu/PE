@@ -1,7 +1,7 @@
 import { useState } from "react";
 import "./App.css";
 import { ApiError, chiffrerOffre } from "./api/client";
-import type { CalculateQuoteRequest } from "./api/types";
+import type { ConfigurationOffre } from "./api/types";
 import { versVueKam, type OffreKam } from "./api/offre";
 import { Comparateur } from "./components/Comparateur";
 import { ConfigurateurForm } from "./components/ConfigurateurForm";
@@ -18,25 +18,25 @@ function messageErreur(detail: unknown): string {
 
 export default function App() {
   const [offre, setOffre] = useState<OffreKam | null>(null);
-  const [requete, setRequete] = useState<CalculateQuoteRequest | null>(null);
+  const [configuration, setConfiguration] = useState<ConfigurationOffre | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
   const [scenarios, setScenarios] = useState<ScenarioComparaison[]>([]);
   const [kamEmail, setKamEmail] = useState("");
 
-  async function chiffrer(req: CalculateQuoteRequest) {
+  async function chiffrer(config: ConfigurationOffre) {
     setEnCours(true);
     setErreur(null);
     try {
-      const reponse = await chiffrerOffre(req);
+      const reponse = await chiffrerOffre(config);
       setOffre(versVueKam(reponse));
-      setRequete(req);
+      setConfiguration(config);
     } catch (e) {
       setOffre(null);
       if (e instanceof ApiError) {
         setErreur(messageErreur(e.detail));
       } else {
-        setErreur("Impossible de joindre l'API de pricing.");
+        setErreur("Impossible de joindre le moteur de prix.");
       }
     } finally {
       setEnCours(false);
@@ -44,11 +44,11 @@ export default function App() {
   }
 
   function ajouterAuComparateur() {
-    if (!offre || !requete) return;
+    if (!offre || !configuration) return;
     const scenario: ScenarioComparaison = {
       id: `${Date.now()}`,
-      label: libelleScenario(requete),
-      requete,
+      label: libelleScenario(configuration),
+      configuration,
       offre,
     };
     setScenarios((courant) => [...courant, scenario].slice(-MAX_SCENARIOS));
@@ -81,9 +81,10 @@ export default function App() {
 
         <div className="zone-resultat">
           {erreur && <div className="erreur">{erreur}</div>}
-          {offre && (
+          {offre && configuration && (
             <ResultatOffre
               offre={offre}
+              configuration={configuration}
               demandeurEmail={kamEmail}
               onAjouterAuComparateur={ajouterAuComparateur}
               comparateurPlein={scenarios.length >= MAX_SCENARIOS}

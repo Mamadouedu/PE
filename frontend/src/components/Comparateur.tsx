@@ -1,8 +1,8 @@
 import type { ScenarioComparaison } from "../scenario";
-import type { PriceLine } from "../api/types";
-import { LIBELLE_PRICE_LINE } from "../api/types";
+import type { Brique } from "../api/types";
+import { LIBELLE_BRIQUE } from "../api/types";
 
-const LIGNES: PriceLine[] = ["DryLease", "HeavyMaintenance", "OperatingMaintenance", "Insurance"];
+const BRIQUES: Brique[] = ["DL", "HM", "OM", "ASSURANCE"];
 
 const formatEuro = new Intl.NumberFormat("fr-FR", {
   style: "currency",
@@ -52,20 +52,20 @@ export function Comparateur({ scenarios, onRetirer }: Props) {
             <tr>
               <th scope="row">Client</th>
               {scenarios.map((s) => (
-                <td key={s.id}>{s.requete.customerCode}</td>
+                <td key={s.id}>{s.configuration.client_code}</td>
               ))}
             </tr>
             <tr>
               <th scope="row">Quantité</th>
               {scenarios.map((s) => (
-                <td key={s.id}>{s.requete.quantity}</td>
+                <td key={s.id}>{s.configuration.quantite}</td>
               ))}
             </tr>
-            {LIGNES.map((ligneCode) => (
-              <tr key={ligneCode}>
-                <th scope="row">{LIBELLE_PRICE_LINE[ligneCode]}</th>
+            {BRIQUES.map((brique) => (
+              <tr key={brique}>
+                <th scope="row">{LIBELLE_BRIQUE[brique]}</th>
                 {scenarios.map((s) => {
-                  const ligne = s.offre.briques.find((b) => b.brique === ligneCode);
+                  const ligne = s.offre.briques.find((b) => b.brique === brique);
                   return (
                     <td key={s.id} className={ligne ? `brique-${ligne.statut}` : undefined}>
                       {ligne && ligne.statut !== "exclue" ? formatEuro.format(ligne.prixRetenu) : "—"}
