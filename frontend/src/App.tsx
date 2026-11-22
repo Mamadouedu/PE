@@ -8,6 +8,7 @@ import { ConfigurateurForm } from "./components/ConfigurateurForm";
 import { RegistreDerogations } from "./components/RegistreDerogations";
 import { RegistreOffres } from "./components/RegistreOffres";
 import { ResultatOffre } from "./components/ResultatOffre";
+import { TableauDeBord } from "./components/TableauDeBord";
 import { VueReferentiel } from "./components/VueReferentiel";
 import { libelleScenario, MAX_SCENARIOS, type ScenarioComparaison } from "./scenario";
 
@@ -19,9 +20,10 @@ function messageErreur(detail: unknown): string {
   return "Une erreur inattendue est survenue.";
 }
 
-type Onglet = "configurateur" | "offres" | "derogations" | "referentiel";
+type Onglet = "tableau_bord" | "configurateur" | "offres" | "derogations" | "referentiel";
 
 const ONGLETS: { id: Onglet; libelle: string }[] = [
+  { id: "tableau_bord", libelle: "Tableau de bord" },
   { id: "configurateur", libelle: "Configurateur" },
   { id: "offres", libelle: "Offres émises" },
   { id: "derogations", libelle: "Dérogations" },
@@ -29,7 +31,7 @@ const ONGLETS: { id: Onglet; libelle: string }[] = [
 ];
 
 export default function App() {
-  const [ongletActif, setOngletActif] = useState<Onglet>("configurateur");
+  const [ongletActif, setOngletActif] = useState<Onglet>("tableau_bord");
   const [offre, setOffre] = useState<OffreKam | null>(null);
   const [configuration, setConfiguration] = useState<ConfigurationOffre | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -127,6 +129,7 @@ export default function App() {
           </>
         )}
 
+        {ongletActif === "tableau_bord" && <TableauDeBord emailKam={kamEmail} />}
         {ongletActif === "offres" && <RegistreOffres />}
         {ongletActif === "derogations" && <RegistreDerogations />}
         {ongletActif === "referentiel" && <VueReferentiel />}
