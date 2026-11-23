@@ -55,6 +55,7 @@ from .users import (
 )
 from .catalog.api import build_catalog_router
 from .catalog.seed import seed_catalog_akiem
+from .catalog.seed_lot2 import seed_lot2
 from .catalog.store import CatalogStore, InMemoryCatalogStore
 from .assistant import AnthropicAssistant, Assistant, Message as MessageAssistant, ScriptedAssistant
 from .csv_import import (
@@ -245,6 +246,7 @@ _catalog_store: CatalogStore = InMemoryCatalogStore()
 # Seed du catalogue au démarrage — pour que l'API soit utilisable
 # immédiatement en dev sans import CSV manuel.
 seed_catalog_akiem(_catalog_store)
+seed_lot2(_catalog_store)
 
 
 def get_catalog_store() -> CatalogStore:

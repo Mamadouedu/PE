@@ -27,7 +27,18 @@ from .entities import (
     TechnicalVariant,
     VariantHomologation,
 )
+from .maintenance import (
+    EcmProvider,
+    MaintenanceOperation,
+    MaintenancePlan,
+    ServiceLevel,
+)
 from .store import CatalogStore, InMemoryCatalogStore
+from .usage import (
+    EngineHoursBand,
+    MileageBand,
+    UsageProfile,
+)
 
 
 def build_catalog_router(
@@ -301,5 +312,79 @@ def build_catalog_router(
                 "platforms": platforms_data,
             })
         return result
+
+    # =========================================================================
+    # Lot 2 — Usage & Maintenance
+    # =========================================================================
+
+    @router.get("/usage-profiles", response_model=list[UsageProfile])
+    def list_usage_profiles(store: CatalogStore = Depends(get_store)):
+        return store.list_usage_profiles()
+
+    @router.post("/usage-profiles", response_model=UsageProfile)
+    def upsert_usage_profile(
+        payload: UsageProfile,
+        _=Depends(require_admin),
+        store: CatalogStore = Depends(get_store),
+    ):
+        return store.upsert_usage_profile(payload)
+
+    @router.get("/mileage-bands", response_model=list[MileageBand])
+    def list_mileage_bands(store: CatalogStore = Depends(get_store)):
+        return store.list_mileage_bands()
+
+    @router.get("/mileage-bands/for-annual-km/{annual_km}")
+    def get_band_for_annual_km(annual_km: int, store: CatalogStore = Depends(get_store)):
+        """Résolution : à quel palier appartient tel mileage annuel ?"""
+        band = store.get_mileage_band_for_annual_km(annual_km)
+        if band is None:
+            raise HTTPException(404, "Aucun palier ne couvre ce mileage")
+        return band
+
+    @router.get("/engine-hours-bands", response_model=list[EngineHoursBand])
+    def list_engine_hours_bands(store: CatalogStore = Depends(get_store)):
+        return store.list_engine_hours_bands()
+
+    @router.get("/maintenance-operations", response_model=list[MaintenanceOperation])
+    def list_maintenance_operations(store: CatalogStore = Depends(get_store)):
+        return store.list_maintenance_operations()
+
+    @router.get("/maintenance-plans", response_model=list[MaintenancePlan])
+    def list_maintenance_plans(store: CatalogStore = Depends(get_store)):
+        return store.list_maintenance_plans()
+
+    @router.get("/maintenance-plans/{plan_id}/operations", response_model=list[MaintenanceOperation])
+    def list_plan_operations(plan_id: UUID, store: CatalogStore = Depends(get_store)):
+        return store.list_operations_for_plan(plan_id)
+
+    @router.get("/ecm-providers", response_model=list[EcmProvider])
+    def list_ecm_providers(store: CatalogStore = Depends(get_store)):
+        return store.list_ecm_providers()
+
+    @router.get("/service-levels", response_model=list[ServiceLevel])
+    def list_service_levels(store: CatalogStore = Depends(get_store)):
+        return store.list_service_levels()
+
+    @router.get("/technical-variants/{variant_id}/usage-profiles")
+    def variant_usage_profiles(variant_id: UUID, store: CatalogStore = Depends(get_store)) -> list[dict]:
+        """Renvoie les profils d'usage supportés par la variante avec les
+        contraintes (seuil d'avertissement, plafond, dérogation requise)."""
+        if store.get_technical_variant(variant_id) is None:
+            raise HTTPException(404, "TechnicalVariant inconnue")
+        rows = store.list_usage_profiles_for_variant(variant_id)
+        return [
+            {
+                "usage_profile": profile.model_dump(),
+                "constraints": link.model_dump(),
+            }
+            for profile, link in rows
+        ]
+
+    @router.get("/technical-variants/{variant_id}/maintenance-plans",
+                response_model=list[MaintenancePlan])
+    def variant_maintenance_plans(variant_id: UUID, store: CatalogStore = Depends(get_store)):
+        if store.get_technical_variant(variant_id) is None:
+            raise HTTPException(404, "TechnicalVariant inconnue")
+        return store.list_maintenance_plans_for_variant(variant_id)
 
     return router
