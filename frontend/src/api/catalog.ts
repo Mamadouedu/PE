@@ -128,6 +128,60 @@ export interface ServiceLevel {
   description: string;
 }
 
+export interface PriceBook {
+  price_book_id: string;
+  price_book_code: string;
+  price_book_name: string;
+  price_type: string;
+  currency_iso: string;
+  description: string;
+}
+
+export interface PriceBookVersion {
+  price_book_version_id: string;
+  price_book_id: string;
+  year: number;
+  version_number: number;
+  status: string;
+  valid_from: string;
+  valid_to: string | null;
+  approved_by: string | null;
+}
+
+export interface CountryGroup {
+  country_group_id: string;
+  group_code: string;
+  group_name: string;
+  country_iso_codes: string[];
+  description: string;
+}
+
+export interface ChiffrageRequest {
+  technical_variant_code: string;
+  country_iso: string;
+  duration_months: number;
+  age_years: number;
+  annual_mileage_km: number;
+  annual_engine_hours?: number;
+  ecm_provider_code?: string;
+  service_level_code?: string;
+  options_monthly?: number;
+}
+
+export interface ChiffrageResponse {
+  variant_code: string;
+  dl_mensuel: number | null;
+  hm_mensuel_provisionne: number;
+  om_mensuel: number;
+  total_mensuel: number;
+  detail_dl: Record<string, any>;
+  detail_om: Record<string, any>;
+  detail_hm: Array<Record<string, any>>;
+  warnings: string[];
+  versions_utilisees: Record<string, string>;
+  plancher_applique: number | null;
+}
+
 export const catalogApi = {
   tree: () => get<FamilyNode[]>("/api/v1/catalog/tree"),
   manufacturers: () => get<Manufacturer[]>("/api/v1/catalog/manufacturers"),
@@ -144,4 +198,29 @@ export const catalogApi = {
   maintenancePlans: () => get<MaintenancePlan[]>("/api/v1/catalog/maintenance-plans"),
   ecmProviders: () => get<EcmProvider[]>("/api/v1/catalog/ecm-providers"),
   serviceLevels: () => get<ServiceLevel[]>("/api/v1/catalog/service-levels"),
+  // Lot 3
+  priceBooks: () => get<PriceBook[]>("/api/v1/catalog/price-books"),
+  priceBookVersions: (pbId: string) => get<PriceBookVersion[]>(`/api/v1/catalog/price-books/${pbId}/versions`),
+  countryGroups: () => get<CountryGroup[]>("/api/v1/catalog/country-groups"),
+  commercialOptions: () => get<any[]>("/api/v1/catalog/commercial-options"),
+  leaseBands: () => get<any[]>("/api/v1/catalog/lease-bands"),
+  assetAgeBands: () => get<any[]>("/api/v1/catalog/asset-age-bands"),
+  dryLeaseRates: (versionId?: string) =>
+    get<any[]>(`/api/v1/catalog/dry-lease-rates${versionId ? `?version_id=${versionId}` : ""}`),
+  heavyMaintenanceRates: (versionId?: string) =>
+    get<any[]>(`/api/v1/catalog/heavy-maintenance-rates${versionId ? `?version_id=${versionId}` : ""}`),
+  operatingMaintenanceRates: (versionId?: string) =>
+    get<any[]>(`/api/v1/catalog/operating-maintenance-rates${versionId ? `?version_id=${versionId}` : ""}`),
+  chiffrer: async (req: ChiffrageRequest): Promise<ChiffrageResponse> => {
+    const r = await fetch(`${BASE_URL}/api/v1/catalog/chiffrage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...entetesAuth() },
+      body: JSON.stringify(req),
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      throw new Error(`HTTP ${r.status} : ${txt}`);
+    }
+    return (await r.json()) as ChiffrageResponse;
+  },
 };

@@ -2080,3 +2080,102 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* --- PriceBooks Lot 3 --- */
+.price-book-carte {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.price-book-entete {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.price-book-nom {
+  color: var(--fg);
+  font-size: 14px;
+}
+
+.price-book-versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.price-book-version {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.price-book-version.version-published {
+  border-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 6%, var(--surface));
+}
+
+/* --- Chiffrage v2 --- */
+.chiffrage-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.chiffrage-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+
+.chiffrage-form input,
+.chiffrage-form select {
+  font: inherit;
+  font-size: 13.5px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.chiffrage-resultat {
+  margin-top: 14px;
+}
+
+.chiffrage-totaux {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.chiffrage-warnings {
+  margin-bottom: 14px;
+}
+
+.chiffrage-warning {
+  background: color-mix(in srgb, var(--alerte) 15%, var(--surface));
+  color: var(--alerte);
+  border: 1px solid color-mix(in srgb, var(--alerte) 40%, var(--border));
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}

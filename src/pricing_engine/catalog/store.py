@@ -41,6 +41,17 @@ from .maintenance import (
     ServiceLevel,
     VariantMaintenancePlan,
 )
+from .pricing import (
+    AssetAgeBand,
+    CommercialOption,
+    CountryGroup,
+    DryLeaseRate,
+    HeavyMaintenanceRate,
+    LeaseBand,
+    OperatingMaintenanceRate,
+    PriceBook,
+    PriceBookVersion,
+)
 
 
 class CatalogStore(Protocol):
@@ -529,3 +540,259 @@ class InMemoryCatalogStore:
             for (v_id, p_id) in self._variant_maintenance_plans
             if v_id == variant_id and p_id in self._maintenance_plans
         ]
+
+    # =========================================================================
+    # Lot 3 : Tarifs versionnés (PriceBooks)
+    # =========================================================================
+
+    def __post_init_lot3__(self):
+        self._lease_bands: dict[UUID, LeaseBand] = {}
+        self._asset_age_bands: dict[UUID, AssetAgeBand] = {}
+        self._country_groups: dict[UUID, CountryGroup] = {}
+        self._commercial_options: dict[UUID, CommercialOption] = {}
+        self._price_books: dict[UUID, PriceBook] = {}
+        self._price_book_versions: dict[UUID, PriceBookVersion] = {}
+        self._dry_lease_rates: dict[UUID, DryLeaseRate] = {}
+        self._heavy_maintenance_rates: dict[UUID, HeavyMaintenanceRate] = {}
+        self._operating_maintenance_rates: dict[UUID, OperatingMaintenanceRate] = {}
+        self._lease_band_by_code: dict[str, UUID] = {}
+        self._asset_age_band_by_code: dict[str, UUID] = {}
+        self._country_group_by_code: dict[str, UUID] = {}
+        self._commercial_option_by_code: dict[str, UUID] = {}
+        self._price_book_by_code: dict[str, UUID] = {}
+
+    def _ensure_lot3(self):
+        if not hasattr(self, "_lease_bands"):
+            self.__post_init_lot3__()
+
+    # ------- Dimensions auxiliaires -------
+
+    def upsert_lease_band(self, b: LeaseBand) -> LeaseBand:
+        self._ensure_lot3()
+        existing_id = self._lease_band_by_code.get(b.band_code.upper())
+        if existing_id and existing_id != b.lease_band_id:
+            b = b.model_copy(update={"lease_band_id": existing_id})
+        self._lease_bands[b.lease_band_id] = b
+        self._lease_band_by_code[b.band_code.upper()] = b.lease_band_id
+        return b
+
+    def list_lease_bands(self) -> list[LeaseBand]:
+        self._ensure_lot3()
+        return sorted(self._lease_bands.values(), key=lambda x: x.min_duration_months)
+
+    def get_lease_band_for_duration(self, months: int) -> LeaseBand | None:
+        for band in self.list_lease_bands():
+            if band.contient(months):
+                return band
+        return None
+
+    def upsert_asset_age_band(self, b: AssetAgeBand) -> AssetAgeBand:
+        self._ensure_lot3()
+        existing_id = self._asset_age_band_by_code.get(b.band_code.upper())
+        if existing_id and existing_id != b.asset_age_band_id:
+            b = b.model_copy(update={"asset_age_band_id": existing_id})
+        self._asset_age_bands[b.asset_age_band_id] = b
+        self._asset_age_band_by_code[b.band_code.upper()] = b.asset_age_band_id
+        return b
+
+    def list_asset_age_bands(self) -> list[AssetAgeBand]:
+        self._ensure_lot3()
+        return sorted(self._asset_age_bands.values(), key=lambda x: x.min_age_years)
+
+    def get_asset_age_band_for_age(self, age_years: float) -> AssetAgeBand | None:
+        for band in self.list_asset_age_bands():
+            if band.contient(age_years):
+                return band
+        return None
+
+    def upsert_country_group(self, g: CountryGroup) -> CountryGroup:
+        self._ensure_lot3()
+        existing_id = self._country_group_by_code.get(g.group_code.upper())
+        if existing_id and existing_id != g.country_group_id:
+            g = g.model_copy(update={"country_group_id": existing_id})
+        self._country_groups[g.country_group_id] = g
+        self._country_group_by_code[g.group_code.upper()] = g.country_group_id
+        return g
+
+    def list_country_groups(self) -> list[CountryGroup]:
+        self._ensure_lot3()
+        return sorted(self._country_groups.values(), key=lambda x: x.group_code)
+
+    def get_country_group_for_iso(self, iso: str) -> CountryGroup | None:
+        for g in self.list_country_groups():
+            if g.contient_pays(iso):
+                return g
+        return None
+
+    def upsert_commercial_option(self, c: CommercialOption) -> CommercialOption:
+        self._ensure_lot3()
+        existing_id = self._commercial_option_by_code.get(c.option_code.upper())
+        if existing_id and existing_id != c.commercial_option_id:
+            c = c.model_copy(update={"commercial_option_id": existing_id})
+        self._commercial_options[c.commercial_option_id] = c
+        self._commercial_option_by_code[c.option_code.upper()] = c.commercial_option_id
+        return c
+
+    def list_commercial_options(self) -> list[CommercialOption]:
+        self._ensure_lot3()
+        return sorted(self._commercial_options.values(), key=lambda x: x.option_code)
+
+    # ------- PriceBooks + Versions -------
+
+    def upsert_price_book(self, pb: PriceBook) -> PriceBook:
+        self._ensure_lot3()
+        existing_id = self._price_book_by_code.get(pb.price_book_code.upper())
+        if existing_id and existing_id != pb.price_book_id:
+            pb = pb.model_copy(update={"price_book_id": existing_id})
+        self._price_books[pb.price_book_id] = pb
+        self._price_book_by_code[pb.price_book_code.upper()] = pb.price_book_id
+        return pb
+
+    def list_price_books(self) -> list[PriceBook]:
+        self._ensure_lot3()
+        return sorted(self._price_books.values(), key=lambda x: x.price_book_code)
+
+    def get_price_book_by_code(self, code: str) -> PriceBook | None:
+        self._ensure_lot3()
+        pbid = self._price_book_by_code.get(code.upper())
+        return self._price_books.get(pbid) if pbid else None
+
+    def upsert_price_book_version(self, v: PriceBookVersion) -> PriceBookVersion:
+        self._ensure_lot3()
+        if v.price_book_id not in self._price_books:
+            raise ValueError(f"PriceBook {v.price_book_id} inconnu")
+        self._price_book_versions[v.price_book_version_id] = v
+        return v
+
+    def list_price_book_versions(self, *, price_book_id: UUID | None = None) -> list[PriceBookVersion]:
+        self._ensure_lot3()
+        items = self._price_book_versions.values()
+        if price_book_id is not None:
+            items = [v for v in items if v.price_book_id == price_book_id]
+        return sorted(items, key=lambda v: (v.year, v.version_number), reverse=True)
+
+    def get_current_published_version(self, price_book_code: str, at_date: date | None = None) -> PriceBookVersion | None:
+        """Renvoie la version publiée actuellement en vigueur pour un
+        PriceBook. Si `at_date` est fourni, cherche celle qui couvre cette
+        date, sinon utilise aujourd'hui."""
+        from datetime import date as date_cls
+        if at_date is None:
+            at_date = date_cls.today()
+        pb = self.get_price_book_by_code(price_book_code)
+        if pb is None:
+            return None
+        candidates = [
+            v for v in self.list_price_book_versions(price_book_id=pb.price_book_id)
+            if v.status == "published" and v.valid_from <= at_date
+            and (v.valid_to is None or at_date <= v.valid_to)
+        ]
+        return max(candidates, key=lambda v: (v.year, v.version_number), default=None)
+
+    # ------- Lignes tarifaires -------
+
+    def add_dry_lease_rate(self, r: DryLeaseRate) -> DryLeaseRate:
+        self._ensure_lot3()
+        if r.price_book_version_id not in self._price_book_versions:
+            raise ValueError(f"PriceBookVersion {r.price_book_version_id} inconnue")
+        self._dry_lease_rates[r.dry_lease_rate_id] = r
+        return r
+
+    def list_dry_lease_rates(self, *, version_id: UUID | None = None) -> list[DryLeaseRate]:
+        self._ensure_lot3()
+        items = self._dry_lease_rates.values()
+        if version_id is not None:
+            items = [r for r in items if r.price_book_version_id == version_id]
+        return list(items)
+
+    def find_dry_lease_rate(
+        self,
+        version_id: UUID,
+        variant_id: UUID,
+        country_group_id: UUID,
+        lease_band_id: UUID,
+        asset_age_band_id: UUID,
+    ) -> DryLeaseRate | None:
+        self._ensure_lot3()
+        for r in self._dry_lease_rates.values():
+            if (r.price_book_version_id == version_id
+                and r.technical_variant_id == variant_id
+                and r.country_group_id == country_group_id
+                and r.lease_band_id == lease_band_id
+                and r.asset_age_band_id == asset_age_band_id):
+                return r
+        return None
+
+    def add_heavy_maintenance_rate(self, r: HeavyMaintenanceRate) -> HeavyMaintenanceRate:
+        self._ensure_lot3()
+        if r.price_book_version_id not in self._price_book_versions:
+            raise ValueError(f"PriceBookVersion {r.price_book_version_id} inconnue")
+        self._heavy_maintenance_rates[r.heavy_maintenance_rate_id] = r
+        return r
+
+    def list_heavy_maintenance_rates(self, *, version_id: UUID | None = None) -> list[HeavyMaintenanceRate]:
+        self._ensure_lot3()
+        items = self._heavy_maintenance_rates.values()
+        if version_id is not None:
+            items = [r for r in items if r.price_book_version_id == version_id]
+        return list(items)
+
+    def find_heavy_maintenance_rates(
+        self, version_id: UUID, variant_id: UUID,
+    ) -> list[HeavyMaintenanceRate]:
+        return [r for r in self._heavy_maintenance_rates.values()
+                if r.price_book_version_id == version_id
+                and r.technical_variant_id == variant_id]
+
+    def add_operating_maintenance_rate(self, r: OperatingMaintenanceRate) -> OperatingMaintenanceRate:
+        self._ensure_lot3()
+        if r.price_book_version_id not in self._price_book_versions:
+            raise ValueError(f"PriceBookVersion {r.price_book_version_id} inconnue")
+        self._operating_maintenance_rates[r.operating_maintenance_rate_id] = r
+        return r
+
+    def list_operating_maintenance_rates(self, *, version_id: UUID | None = None) -> list[OperatingMaintenanceRate]:
+        self._ensure_lot3()
+        items = self._operating_maintenance_rates.values()
+        if version_id is not None:
+            items = [r for r in items if r.price_book_version_id == version_id]
+        return list(items)
+
+    def find_operating_maintenance_rate(
+        self, version_id: UUID, variant_id: UUID, mileage_band_id: UUID,
+        country_id: UUID | None = None, ecm_provider_id: UUID | None = None,
+        service_level_id: UUID | None = None,
+    ) -> OperatingMaintenanceRate | None:
+        """Résolution OM : match le plus spécifique d'abord.
+
+        Un record avec country_id = None match tous les pays (fallback).
+        Même principe pour ecm et service_level.
+        """
+        candidates = [
+            r for r in self._operating_maintenance_rates.values()
+            if r.price_book_version_id == version_id
+            and r.technical_variant_id == variant_id
+            and r.mileage_band_id == mileage_band_id
+        ]
+        # Filtres optionnels avec fallback None
+        def match_score(r: OperatingMaintenanceRate) -> int:
+            score = 0
+            if country_id is not None:
+                if r.country_id == country_id: score += 4
+                elif r.country_id is None: score += 1
+                else: return -1
+            if ecm_provider_id is not None:
+                if r.ecm_provider_id == ecm_provider_id: score += 2
+                elif r.ecm_provider_id is None: score += 1
+                else: return -1
+            if service_level_id is not None:
+                if r.service_level_id == service_level_id: score += 1
+                elif r.service_level_id is None: score += 1
+                else: return -1
+            return score
+
+        scored = [(match_score(r), r) for r in candidates]
+        scored = [(s, r) for s, r in scored if s >= 0]
+        if not scored:
+            return None
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[0][1]

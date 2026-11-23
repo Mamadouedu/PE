@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { catalogApi, type FamilyNode, type PlatformNode, type SeriesNode, type VariantNode, type Country, type Manufacturer } from "../api/catalog";
 import { CatalogueLot2 } from "./CatalogueLot2";
+import { CatalogueLot3 } from "./CatalogueLot3";
 
-type OngletCatalogue = "hierarchie" | "constructeurs" | "pays" | "homologations" | "usage_maintenance";
+type OngletCatalogue = "hierarchie" | "constructeurs" | "pays" | "homologations" | "usage_maintenance" | "tarifs";
 
 export function Catalogue() {
   const [onglet, setOnglet] = useState<OngletCatalogue>("hierarchie");
@@ -51,6 +52,12 @@ export function Catalogue() {
         >
           Usage & maintenance
         </button>
+        <button
+          className={`sous-onglet ${onglet === "tarifs" ? "sous-onglet-actif" : ""}`}
+          onClick={() => setOnglet("tarifs")}
+        >
+          Tarifs & chiffrage v2
+        </button>
       </nav>
 
       {onglet === "hierarchie" && <ArbreHierarchie />}
@@ -58,6 +65,7 @@ export function Catalogue() {
       {onglet === "pays" && <ListePays />}
       {onglet === "homologations" && <ListeHomologations />}
       {onglet === "usage_maintenance" && <CatalogueLot2 />}
+      {onglet === "tarifs" && <CatalogueLot3 />}
     </section>
   );
 }

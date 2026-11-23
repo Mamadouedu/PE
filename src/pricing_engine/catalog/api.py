@@ -33,12 +33,38 @@ from .maintenance import (
     MaintenancePlan,
     ServiceLevel,
 )
+from .pricing import (
+    AssetAgeBand,
+    CommercialOption,
+    CountryGroup,
+    DryLeaseRate,
+    HeavyMaintenanceRate,
+    LeaseBand,
+    OperatingMaintenanceRate,
+    PriceBook,
+    PriceBookVersion,
+)
+from .pricing_engine_v2 import DemandeChiffrage, MoteurPrixV2
 from .store import CatalogStore, InMemoryCatalogStore
 from .usage import (
     EngineHoursBand,
     MileageBand,
     UsageProfile,
 )
+from pydantic import BaseModel
+
+
+class ChiffrageRequest(BaseModel):
+    """Payload d'entrée du moteur de prix v2."""
+    technical_variant_code: str
+    country_iso: str
+    duration_months: int
+    age_years: float
+    annual_mileage_km: int
+    annual_engine_hours: float = 0
+    ecm_provider_code: str | None = None
+    service_level_code: str | None = None
+    options_monthly: float = 0
 
 
 def build_catalog_router(
@@ -386,5 +412,80 @@ def build_catalog_router(
         if store.get_technical_variant(variant_id) is None:
             raise HTTPException(404, "TechnicalVariant inconnue")
         return store.list_maintenance_plans_for_variant(variant_id)
+
+    # =========================================================================
+    # Lot 3 — PriceBooks & chiffrage v2
+    # =========================================================================
+
+    @router.get("/lease-bands", response_model=list[LeaseBand])
+    def list_lease_bands(store: CatalogStore = Depends(get_store)):
+        return store.list_lease_bands()
+
+    @router.get("/asset-age-bands", response_model=list[AssetAgeBand])
+    def list_asset_age_bands(store: CatalogStore = Depends(get_store)):
+        return store.list_asset_age_bands()
+
+    @router.get("/country-groups", response_model=list[CountryGroup])
+    def list_country_groups(store: CatalogStore = Depends(get_store)):
+        return store.list_country_groups()
+
+    @router.get("/commercial-options", response_model=list[CommercialOption])
+    def list_commercial_options(store: CatalogStore = Depends(get_store)):
+        return store.list_commercial_options()
+
+    @router.get("/price-books", response_model=list[PriceBook])
+    def list_price_books(store: CatalogStore = Depends(get_store)):
+        return store.list_price_books()
+
+    @router.get("/price-books/{price_book_id}/versions", response_model=list[PriceBookVersion])
+    def list_price_book_versions(price_book_id: UUID, store: CatalogStore = Depends(get_store)):
+        return store.list_price_book_versions(price_book_id=price_book_id)
+
+    @router.get("/dry-lease-rates", response_model=list[DryLeaseRate])
+    def list_dl_rates(
+        version_id: UUID | None = Query(default=None),
+        store: CatalogStore = Depends(get_store),
+    ):
+        return store.list_dry_lease_rates(version_id=version_id)
+
+    @router.get("/heavy-maintenance-rates", response_model=list[HeavyMaintenanceRate])
+    def list_hm_rates(
+        version_id: UUID | None = Query(default=None),
+        store: CatalogStore = Depends(get_store),
+    ):
+        return store.list_heavy_maintenance_rates(version_id=version_id)
+
+    @router.get("/operating-maintenance-rates", response_model=list[OperatingMaintenanceRate])
+    def list_om_rates(
+        version_id: UUID | None = Query(default=None),
+        store: CatalogStore = Depends(get_store),
+    ):
+        return store.list_operating_maintenance_rates(version_id=version_id)
+
+    @router.post("/chiffrage")
+    def chiffrer_v2(
+        body: ChiffrageRequest,
+        store: CatalogStore = Depends(get_store),
+    ):
+        """Moteur de prix v2 : résout les tarifs via PriceBookVersion publiée
+        et applique la formule OM cible du doc (section 11)."""
+        moteur = MoteurPrixV2(store)
+        try:
+            res = moteur.chiffrer(DemandeChiffrage(**body.model_dump()))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        return {
+            "variant_code": res.variant_code,
+            "dl_mensuel": res.dl_mensuel,
+            "hm_mensuel_provisionne": res.hm_mensuel_provisionne,
+            "om_mensuel": res.om_mensuel,
+            "total_mensuel": res.total_mensuel,
+            "detail_dl": res.detail_dl,
+            "detail_om": res.detail_om,
+            "detail_hm": res.detail_hm,
+            "warnings": res.warnings,
+            "versions_utilisees": res.versions_utilisees,
+            "plancher_applique": res.plancher_applique,
+        }
 
     return router
