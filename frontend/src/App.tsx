@@ -6,6 +6,7 @@ import type { ConfigurationOffre } from "./api/types";
 import { versVueKam, type OffreKam } from "./api/offre";
 import { AdminReferentiel } from "./components/AdminReferentiel";
 import { Assistant } from "./components/Assistant";
+import { Catalogue } from "./components/Catalogue";
 import { Comparateur } from "./components/Comparateur";
 import { ConfigurateurForm } from "./components/ConfigurateurForm";
 import { Login } from "./components/Login";
@@ -30,6 +31,7 @@ type Onglet =
   | "offres"
   | "derogations"
   | "referentiel"
+  | "catalogue"
   | "admin"
   | "assistant";
 
@@ -45,6 +47,7 @@ const ONGLETS: DefinitionOnglet[] = [
   { id: "offres", libelle: "Offres émises" },
   { id: "derogations", libelle: "Dérogations" },
   { id: "referentiel", libelle: "Référentiel" },
+  { id: "catalogue", libelle: "Catalogue" },
   { id: "admin", libelle: "Administration", permission: "admin_referentiel" },
   { id: "assistant", libelle: "Assistant" },
 ];
@@ -174,6 +177,7 @@ export default function App() {
         {ongletActif === "offres" && <RegistreOffres />}
         {ongletActif === "derogations" && <RegistreDerogations />}
         {ongletActif === "referentiel" && <VueReferentiel />}
+        {ongletActif === "catalogue" && <Catalogue />}
         {ongletActif === "admin" && <AdminReferentiel emailKam={kamEmail} />}
         {ongletActif === "assistant" && <Assistant />}
       </main>

@@ -53,6 +53,9 @@ from .users import (
     hacher_mot_de_passe,
     verifier_mot_de_passe,
 )
+from .catalog.api import build_catalog_router
+from .catalog.seed import seed_catalog_akiem
+from .catalog.store import CatalogStore, InMemoryCatalogStore
 from .assistant import AnthropicAssistant, Assistant, Message as MessageAssistant, ScriptedAssistant
 from .csv_import import (
     detecter_type_import,
@@ -236,6 +239,17 @@ def _seeder_utilisateurs_par_defaut() -> None:
 
 _seeder_utilisateurs_par_defaut()
 
+# ---------------- Catalogue PricingHub (Lot 1) ----------------
+
+_catalog_store: CatalogStore = InMemoryCatalogStore()
+# Seed du catalogue au démarrage — pour que l'API soit utilisable
+# immédiatement en dev sans import CSV manuel.
+seed_catalog_akiem(_catalog_store)
+
+
+def get_catalog_store() -> CatalogStore:
+    return _catalog_store
+
 
 def get_users():
     return _users
@@ -293,6 +307,11 @@ def exiger_permission(permission: str):
             raise HTTPException(status_code=403, detail=f"Permission '{permission}' refusée")
         return utilisateur
     return _verifier
+
+
+# Monte le router catalogue PricingHub (Lot 1 : référentiel locomotive).
+# Doit être après `get_catalog_store` et `exiger_permission`.
+app.include_router(build_catalog_router(get_catalog_store, exiger_permission))
 
 
 def get_utilisateur(utilisateur: Utilisateur = Depends(get_current_user)) -> str:
