@@ -585,6 +585,87 @@ class PricingCalculationRow(Base):
     warnings: Mapped[list] = mapped_column(JSON, default=list)
 
 
+class PricingCalculationComponentRow(Base):
+    """Composant élémentaire du calcul : DL base, OM mileage, HM HM1, etc.
+    Permet l'explicabilité M2-05 et le reporting par brique sans
+    recalcul."""
+    __tablename__ = "pricing_calculation_components"
+    component_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    pricing_calculation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("pricing_calculations.pricing_calculation_id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    component_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    component_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), default="")
+    monthly_amount: Mapped[float] = mapped_column(Float, default=0)
+    annual_amount: Mapped[float] = mapped_column(Float, default=0)
+    is_visible_to_client: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class AppliedPricingRuleRow(Base):
+    """Trace des règles métier appliquées (remise, campagne, dérogation)
+    avec qui a validé et quand."""
+    __tablename__ = "applied_pricing_rules"
+    applied_rule_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    pricing_calculation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("pricing_calculations.pricing_calculation_id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    rule_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    rule_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    rule_description: Mapped[str] = mapped_column(String(500), default="")
+    impact_percentage: Mapped[float] = mapped_column(Float, default=0)
+    impact_monthly_amount: Mapped[float] = mapped_column(Float, default=0)
+    approved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class QuoteLineOptionRow(Base):
+    __tablename__ = "quote_line_options"
+    quote_line_option_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    quote_line_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("quote_lines.quote_line_id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    commercial_option_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    option_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    billing_unit: Mapped[str] = mapped_column(String(32), default="monthly")
+    total_monthly_impact: Mapped[float] = mapped_column(Float, default=0)
+    is_included: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class AuditLogRow(Base):
+    """Audit trail universel : qui a fait quoi, quand, sur quelle entité.
+    Alimenté par `log_audit()` appelé à chaque mutation sensible.
+    Permet la compliance (traçabilité) et le forensic en cas d'incident."""
+    __tablename__ = "audit_log"
+    audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    actor_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    actor_role: Mapped[str] = mapped_column(String(32), nullable=False)
+    action: Mapped[str] = mapped_column(String(64), nullable=False, index=True,
+        doc="CREATE, UPDATE, DELETE, SUBMIT, DECIDE, LOGIN...")
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True,
+        doc="Quote, QuoteLine, FleetAsset, Utilisateur...")
+    entity_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    details: Mapped[dict] = mapped_column(JSON, default=dict,
+        doc="Payload libre : before/after, raison, IP, user-agent...")
+    http_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    http_method: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+
+    __table_args__ = (
+        Index("ix_audit_occurred", "occurred_at"),
+        Index("ix_audit_entity", "entity_type", "entity_id"),
+    )
+
+
 # =========================================================================
 # Lot 5 : Flotte réelle
 # =========================================================================
@@ -653,9 +734,29 @@ class AssetMaintenanceHistoryRow(Base):
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+def enable_sqlite_foreign_keys(engine) -> None:
+    """Active PRAGMA foreign_keys sur toute connexion SQLite de cet engine.
+
+    SQLite ne vérifie pas les FK par défaut, donc les CASCADE ne
+    s'appliquent pas et des orphelins peuvent persister. Pas de no-op
+    en PostgreSQL : le listener filtre par dialect.
+    """
+    from sqlalchemy import event
+
+    if engine.dialect.name != "sqlite":
+        return
+
+    @event.listens_for(engine, "connect")
+    def _fk_pragma_on_connect(dbapi_connection, _):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
 def create_all_catalog_tables(engine) -> None:
     """Helper pour créer toutes les tables du catalog en une fois.
 
     En prod on utilise Alembic ; ce helper sert aux tests qui veulent une
-    base propre sans passer par la CLI."""
+    base propre sans passer par la CLI. Active aussi les FK SQLite."""
+    enable_sqlite_foreign_keys(engine)
     Base.metadata.create_all(engine)

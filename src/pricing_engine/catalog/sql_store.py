@@ -2032,7 +2032,10 @@ class SqlAlchemyCatalogStore:
 
 
 def make_catalog_session_factory(database_url: str) -> sessionmaker[Session]:
-    """Factory helper. Crée l'engine + la sessionmaker en une ligne."""
+    """Factory helper. Crée l'engine + la sessionmaker en une ligne.
+    Active aussi les FK sur SQLite pour que les CASCADE jouent."""
     from sqlalchemy import create_engine
+    from .db import enable_sqlite_foreign_keys
     engine = create_engine(database_url, future=True)
+    enable_sqlite_foreign_keys(engine)
     return sessionmaker(bind=engine, expire_on_commit=False, future=True)

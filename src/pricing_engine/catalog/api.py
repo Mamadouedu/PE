@@ -663,9 +663,18 @@ def build_catalog_router(
             user = Depends(get_current_user),
         ):
             try:
-                return svc.soumettre(quote_id, user.email)
+                result = svc.soumettre(quote_id, user.email)
             except ValueError as e:
                 raise HTTPException(409, str(e))
+            from ..audit import log_audit
+            log_audit(
+                actor_email=user.email, actor_role=user.role.value,
+                action="SUBMIT", entity_type="Quote", entity_id=str(quote_id),
+                details={"quote_number": result.quote_number,
+                         "niveau_validation": result.niveau_validation,
+                         "total_mensuel": result.total_mensuel},
+            )
+            return result
 
         @router.post("/quotes/{quote_id}/decision", response_model=Quote)
         def decision_quote(
@@ -677,9 +686,18 @@ def build_catalog_router(
             if not user.a_permission("decider_derogation"):
                 raise HTTPException(403, "Permission `decider_derogation` requise")
             try:
-                return svc.decider(quote_id, user.email, body.approved, body.comment)
+                result = svc.decider(quote_id, user.email, body.approved, body.comment)
             except ValueError as e:
                 raise HTTPException(409, str(e))
+            from ..audit import log_audit
+            log_audit(
+                actor_email=user.email, actor_role=user.role.value,
+                action="APPROVE" if body.approved else "REJECT",
+                entity_type="Quote", entity_id=str(quote_id),
+                details={"quote_number": result.quote_number,
+                         "comment": body.comment},
+            )
+            return result
 
         @router.delete("/quotes/{quote_id}", status_code=204)
         def delete_quote(

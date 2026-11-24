@@ -61,6 +61,14 @@ from .catalog.seed_lot2 import seed_lot2
 from .catalog.seed_lot3 import seed_lot3
 from .catalog.seed_lot5 import seed_lot5
 from .catalog.store import CatalogStore, InMemoryCatalogStore
+from .audit import (
+    AuditEntry,
+    clear_http_context,
+    get_audit_store,
+    log_audit,
+    set_audit_store,
+    set_http_context,
+)
 from .assistant import AnthropicAssistant, Assistant, Message as MessageAssistant, ScriptedAssistant
 from .csv_import import (
     detecter_type_import,
@@ -94,11 +102,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     # Sans ça, le JS du frontend ne peut pas lire Content-Disposition (donc
-    # pas le numéro d'offre dans le nom du fichier téléchargé) : les
-    # navigateurs n'exposent par défaut qu'une courte liste d'en-têtes de
-    # réponse aux requêtes cross-origin, celui-ci n'en fait pas partie.
-    expose_headers=["Content-Disposition"],
+    # pas le numéro d'offre dans le nom du fichier téléchargé) ni les
+    # headers de pagination (X-Total-Count...) : les navigateurs n'exposent
+    # par défaut qu'une courte liste d'en-têtes de réponse aux requêtes
+    # cross-origin, aucun de ceux-ci n'en fait partie.
+    expose_headers=["Content-Disposition", "X-Total-Count", "X-Limit", "X-Offset"],
 )
+
+
+@app.middleware("http")
+async def _audit_context_middleware(request, call_next):
+    """Capture le contexte HTTP pour que `log_audit()` l'enrichisse
+    automatiquement (chemin, méthode, IP). Pas de persistance ici — juste
+    un contextvar qui vit le temps de la requête."""
+    client = request.client
+    ip = client.host if client else None
+    set_http_context(path=request.url.path, method=request.method, ip=ip)
+    try:
+        return await call_next(request)
+    finally:
+        clear_http_context()
 
 # Documentation interactive servie en local (pas de CDN) : de nombreux
 # réseaux d'entreprise, comme celui qui a motivé ce cahier, bloquent les CDN
@@ -294,6 +317,14 @@ def _build_quote_store() -> QuoteStore:
         return SqlAlchemyQuoteStore(sf)
     return InMemoryQuoteStore()
 
+
+# Audit trail : bascule en SQL si CATALOG_DATABASE_URL
+_database_url = os.environ.get("CATALOG_DATABASE_URL")
+if _database_url:
+    from .sql_audit import SqlAlchemyAuditStore
+    from .catalog.sql_store import make_catalog_session_factory as _mcsf
+    set_audit_store(SqlAlchemyAuditStore(_mcsf(_database_url)))
+
 # Quote store Lot 4 — SQL si CATALOG_DATABASE_URL, sinon in-memory
 _quote_store: QuoteStore = _build_quote_store()
 
@@ -445,6 +476,13 @@ def login(body: _LoginRequest) -> dict:
         utilisateur.hash_mot_de_passe = hacher_mot_de_passe(body.mot_de_passe)
         _users.mettre_a_jour(utilisateur)
     session = _sessions.creer(utilisateur.email)
+    log_audit(
+        actor_email=utilisateur.email,
+        actor_role=utilisateur.role.value,
+        action="LOGIN",
+        entity_type="Utilisateur",
+        entity_id=utilisateur.email,
+    )
     return {
         "token": session.token,
         "duree_secondes": DUREE_SESSION_SECONDES,
@@ -525,7 +563,36 @@ def supprimer_utilisateur(
     if not _users.supprimer(email):
         raise HTTPException(status_code=404, detail="Utilisateur inconnu")
     _sessions.revoquer_pour(email)
+    log_audit(
+        actor_email=courant.email,
+        actor_role=courant.role.value,
+        action="DELETE",
+        entity_type="Utilisateur",
+        entity_id=email,
+    )
     return Response(status_code=204)
+
+
+@app.get("/api/v1/audit")
+def lister_audit(
+    _: Utilisateur = Depends(exiger_permission("gerer_utilisateurs")),
+    actor_email: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    action: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    """Journal d'audit — permission ADMIN uniquement. Filtres optionnels
+    par acteur, type d'entité, ID d'entité ou action. Limité à 100 par
+    défaut, plus récent d'abord."""
+    entries = get_audit_store().list(
+        actor_email=actor_email,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        limit=min(limit, 500),
+    )
+    return [e.model_dump(mode="json") for e in entries]
 
 
 @app.post("/api/v1/prix", response_model=DetailOffre)
