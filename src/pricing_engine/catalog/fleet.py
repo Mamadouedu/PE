@@ -100,6 +100,17 @@ class FleetAsset(BaseModel):
     notes: str = ""
     is_active: bool = True
 
+    # Soft delete : une loco sortie de flotte garde son historique
+    # (relevés compteur, maintenance, chiffrages passés) pour l'audit
+    # financier et réglementaire. deleted_at/_by renseignés = masquée
+    # des listings standards, visible aux admins via include_deleted=True.
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
     def age_years(self, at_date: date | None = None) -> float:
         """Âge de la locomotive à une date donnée (par défaut : aujourd'hui)."""
         ref = at_date or date.today()

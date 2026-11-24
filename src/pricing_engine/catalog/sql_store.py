@@ -14,6 +14,7 @@ Pas d'ORM-level cascade ; les deletes cascade sont déclarés en DB.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -1799,22 +1800,31 @@ class SqlAlchemyCatalogStore:
             session.commit()
             return a
 
-    def get_fleet_asset(self, aid: UUID) -> FleetAsset | None:
+    def get_fleet_asset(self, aid: UUID, *, include_deleted: bool = False) -> FleetAsset | None:
         with self._sf() as session:
             row = session.get(FleetAssetRow, _s(aid))
-            return self._row_to_fleet_asset(row) if row else None
+            if row is None:
+                return None
+            if row.deleted_at is not None and not include_deleted:
+                return None
+            return self._row_to_fleet_asset(row)
 
-    def get_fleet_asset_by_asset_number(self, asset_number: str) -> FleetAsset | None:
+    def get_fleet_asset_by_asset_number(self, asset_number: str, *,
+                                        include_deleted: bool = False) -> FleetAsset | None:
         with self._sf() as session:
-            row = session.execute(
-                select(FleetAssetRow).where(FleetAssetRow.asset_number == asset_number.upper())
-            ).scalar_one_or_none()
+            stmt = select(FleetAssetRow).where(FleetAssetRow.asset_number == asset_number.upper())
+            if not include_deleted:
+                stmt = stmt.where(FleetAssetRow.deleted_at.is_(None))
+            row = session.execute(stmt).scalar_one_or_none()
             return self._row_to_fleet_asset(row) if row else None
 
     def list_fleet_assets(self, *, variant_id: UUID | None = None,
-                          operational_status=None) -> list[FleetAsset]:
+                          operational_status=None,
+                          include_deleted: bool = False) -> list[FleetAsset]:
         with self._sf() as session:
             stmt = select(FleetAssetRow)
+            if not include_deleted:
+                stmt = stmt.where(FleetAssetRow.deleted_at.is_(None))
             if variant_id is not None:
                 stmt = stmt.where(FleetAssetRow.technical_variant_id == _s(variant_id))
             if operational_status is not None:
@@ -1822,6 +1832,32 @@ class SqlAlchemyCatalogStore:
                 stmt = stmt.where(FleetAssetRow.operational_status == val)
             rows = session.execute(stmt.order_by(FleetAssetRow.asset_number)).scalars().all()
             return [self._row_to_fleet_asset(r) for r in rows]
+
+    def soft_delete_fleet_asset(self, aid: UUID, actor_email: str) -> bool:
+        """Marque la loco comme supprimée sans détruire ses données.
+        L'historique (relevés, maintenance, chiffrages passés) reste
+        disponible pour l'audit. Retourne False si déjà supprimée ou
+        inexistante."""
+        with self._sf() as session:
+            row = session.get(FleetAssetRow, _s(aid))
+            if row is None or row.deleted_at is not None:
+                return False
+            row.deleted_at = datetime.now(timezone.utc)
+            row.deleted_by = actor_email
+            session.commit()
+        return True
+
+    def restore_fleet_asset(self, aid: UUID) -> bool:
+        """Annule un soft delete. Retourne False si pas supprimée ou
+        inexistante."""
+        with self._sf() as session:
+            row = session.get(FleetAssetRow, _s(aid))
+            if row is None or row.deleted_at is None:
+                return False
+            row.deleted_at = None
+            row.deleted_by = None
+            session.commit()
+        return True
 
     @staticmethod
     def _row_to_fleet_asset(r: FleetAssetRow) -> FleetAsset:
@@ -1845,6 +1881,8 @@ class SqlAlchemyCatalogStore:
             last_vgi_date=r.last_vgi_date,
             notes=r.notes,
             is_active=r.is_active,
+            deleted_at=r.deleted_at,
+            deleted_by=r.deleted_by,
         )
 
     def add_meter_reading(self, r: AssetMeterReading) -> AssetMeterReading:

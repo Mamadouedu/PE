@@ -722,13 +722,18 @@ def build_catalog_router(
     def list_fleet_assets(
         variant_id: UUID | None = Query(default=None),
         operational_status: OperationalStatus | None = Query(default=None),
+        include_deleted: bool = Query(default=False,
+            description="Inclut les locos soft-deleted (admin)"),
         limit: int = Query(default=50, ge=1, le=500),
         offset: int = Query(default=0, ge=0),
         store: CatalogStore = Depends(get_store),
     ):
-        """Pagination limit/offset + headers X-Total-Count."""
+        """Pagination limit/offset + headers X-Total-Count. Par défaut les
+        locos soft-deleted sont masquées ; `include_deleted=true` les
+        inclut (utile pour audit/restore)."""
         items = store.list_fleet_assets(
             variant_id=variant_id, operational_status=operational_status,
+            include_deleted=include_deleted,
         )
         total = len(items)
         page = items[offset:offset + limit]
@@ -743,8 +748,10 @@ def build_catalog_router(
         return resp
 
     @router.get("/fleet-assets/{asset_id}", response_model=FleetAsset)
-    def get_fleet_asset(asset_id: UUID, store: CatalogStore = Depends(get_store)):
-        a = store.get_fleet_asset(asset_id)
+    def get_fleet_asset(asset_id: UUID,
+                        include_deleted: bool = Query(default=False),
+                        store: CatalogStore = Depends(get_store)):
+        a = store.get_fleet_asset(asset_id, include_deleted=include_deleted)
         if a is None:
             raise HTTPException(404, "FleetAsset inconnu")
         return a
@@ -803,5 +810,59 @@ def build_catalog_router(
             return store.add_maintenance_history(payload_corrige)
         except ValueError as e:
             raise HTTPException(422, str(e))
+
+    # ---------- Soft delete fleet asset (admin seulement) ----------
+    # Audité systématiquement : une loco sortie de flotte doit laisser
+    # une trace de qui l'a retirée et quand.
+    if get_current_user is not None:
+
+        @router.delete("/fleet-assets/{asset_id}", status_code=204)
+        def soft_delete_fleet_asset(
+            asset_id: UUID,
+            _=Depends(require_admin),
+            user = Depends(get_current_user),
+            store: CatalogStore = Depends(get_store),
+        ):
+            """Soft delete : marque la loco comme supprimée. Son historique
+            (relevés, maintenance, chiffrages passés) reste en base pour
+            l'audit financier et réglementaire. Réversible via /restore."""
+            asset = store.get_fleet_asset(asset_id, include_deleted=True)
+            if asset is None:
+                raise HTTPException(404, "FleetAsset inconnu")
+            if asset.is_deleted:
+                raise HTTPException(409, "FleetAsset déjà supprimé")
+            if not store.soft_delete_fleet_asset(asset_id, user.email):
+                raise HTTPException(500, "Soft delete a échoué")
+            from ..audit import log_audit
+            log_audit(
+                actor_email=user.email, actor_role=user.role.value,
+                action="DELETE", entity_type="FleetAsset", entity_id=str(asset_id),
+                details={"asset_number": asset.asset_number,
+                         "vehicle_registration_number": asset.vehicle_registration_number},
+            )
+            return Response(status_code=204)
+
+        @router.post("/fleet-assets/{asset_id}/restore", response_model=FleetAsset)
+        def restore_fleet_asset(
+            asset_id: UUID,
+            _=Depends(require_admin),
+            user = Depends(get_current_user),
+            store: CatalogStore = Depends(get_store),
+        ):
+            """Annule un soft delete."""
+            asset = store.get_fleet_asset(asset_id, include_deleted=True)
+            if asset is None:
+                raise HTTPException(404, "FleetAsset inconnu")
+            if not asset.is_deleted:
+                raise HTTPException(409, "FleetAsset n'est pas supprimé")
+            if not store.restore_fleet_asset(asset_id):
+                raise HTTPException(500, "Restore a échoué")
+            from ..audit import log_audit
+            log_audit(
+                actor_email=user.email, actor_role=user.role.value,
+                action="RESTORE", entity_type="FleetAsset", entity_id=str(asset_id),
+                details={"asset_number": asset.asset_number},
+            )
+            return store.get_fleet_asset(asset_id)
 
     return router

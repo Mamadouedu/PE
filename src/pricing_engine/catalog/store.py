@@ -832,24 +832,54 @@ class InMemoryCatalogStore:
         self._fleet_asset_by_registration[a.vehicle_registration_number.upper()] = a.fleet_asset_id
         return a
 
-    def get_fleet_asset(self, aid: UUID) -> FleetAsset | None:
+    def get_fleet_asset(self, aid: UUID, *, include_deleted: bool = False) -> FleetAsset | None:
         self._ensure_lot5()
-        return self._fleet_assets.get(aid)
+        a = self._fleet_assets.get(aid)
+        if a is None:
+            return None
+        if a.is_deleted and not include_deleted:
+            return None
+        return a
 
-    def get_fleet_asset_by_asset_number(self, asset_number: str) -> FleetAsset | None:
+    def get_fleet_asset_by_asset_number(self, asset_number: str, *,
+                                        include_deleted: bool = False) -> FleetAsset | None:
         self._ensure_lot5()
         aid = self._fleet_asset_by_asset_number.get(asset_number.upper())
-        return self._fleet_assets.get(aid) if aid else None
+        if not aid:
+            return None
+        return self.get_fleet_asset(aid, include_deleted=include_deleted)
 
     def list_fleet_assets(self, *, variant_id: UUID | None = None,
-                          operational_status=None) -> list[FleetAsset]:
+                          operational_status=None,
+                          include_deleted: bool = False) -> list[FleetAsset]:
         self._ensure_lot5()
         items = list(self._fleet_assets.values())
+        if not include_deleted:
+            items = [a for a in items if not a.is_deleted]
         if variant_id is not None:
             items = [a for a in items if a.technical_variant_id == variant_id]
         if operational_status is not None:
             items = [a for a in items if a.operational_status == operational_status]
         return sorted(items, key=lambda a: a.asset_number)
+
+    def soft_delete_fleet_asset(self, aid: UUID, actor_email: str) -> bool:
+        from datetime import datetime, timezone
+        self._ensure_lot5()
+        a = self._fleet_assets.get(aid)
+        if a is None or a.is_deleted:
+            return False
+        a.deleted_at = datetime.now(timezone.utc)
+        a.deleted_by = actor_email
+        return True
+
+    def restore_fleet_asset(self, aid: UUID) -> bool:
+        self._ensure_lot5()
+        a = self._fleet_assets.get(aid)
+        if a is None or not a.is_deleted:
+            return False
+        a.deleted_at = None
+        a.deleted_by = None
+        return True
 
     # --- MeterReadings ---
 
