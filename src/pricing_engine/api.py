@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Response
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
@@ -245,6 +245,14 @@ _users = InMemoryUserStore()
 # sinon in-memory (dev, mono-process).
 _sessions = make_session_store(os.environ.get("REDIS_URL"))
 
+# Rate limiter login (brute force protection). Partage le client Redis
+# des sessions quand il existe, sinon un store in-memory.
+from .rate_limit import make_rate_limiter, RedisRateLimiter
+from .users import RedisSessionStore as _RSS
+_rate_limiter = make_rate_limiter(
+    _sessions._r if isinstance(_sessions, _RSS) else None
+)
+
 
 def _seeder_utilisateurs_par_defaut() -> None:
     """Crée les comptes de démo au démarrage. En vrai, on lira la liste
@@ -412,6 +420,35 @@ app.include_router(build_catalog_router(
 ))
 
 
+# ---------------- Health checks ----------------
+
+def _get_db_session_factory():
+    """Renvoie la session factory SQL pour les checks, ou None si on est
+    en mode in-memory (pas de DB à sonder)."""
+    url = os.environ.get("CATALOG_DATABASE_URL")
+    if not url:
+        return None
+    from .catalog.sql_store import make_catalog_session_factory
+    return make_catalog_session_factory(url)
+
+
+def _get_redis_client():
+    """Renvoie le client Redis du session store si on tourne sur Redis."""
+    from .users import RedisSessionStore
+    if isinstance(_sessions, RedisSessionStore):
+        return _sessions._r
+    return None
+
+
+from .health import build_health_router
+app.include_router(build_health_router(
+    get_db_session_factory=_get_db_session_factory,
+    get_redis_client=_get_redis_client,
+    service_name="pricinghub-api",
+    version="0.1.0",
+))
+
+
 def get_utilisateur(utilisateur: Utilisateur = Depends(get_current_user)) -> str:
     """Compat : retourne l'e-mail de l'utilisateur courant (résolu par
     token Bearer, header X-Utilisateur ou fallback anonyme en mode dev
@@ -467,17 +504,41 @@ class _CreateUserRequest(BaseModel):
 
 
 @app.post("/api/v1/auth/login")
-def login(body: _LoginRequest) -> dict:
+def login(body: _LoginRequest, request: Request) -> dict:
     """Vérifie le mot de passe, ouvre une session, renvoie un token Bearer.
 
     Migration douce : si le hash stocké est un ancien PBKDF2 (ou un Argon2id
     avec des paramètres obsolètes), on le rehash en Argon2id courant au
-    passage, sans que l'utilisateur voie quoi que ce soit."""
+    passage, sans que l'utilisateur voie quoi que ce soit.
+
+    Protection brute force : 5 échecs sur un email ou 20 sur une IP
+    dans les 15 min → 429 avec Retry-After."""
+    client_ip = request.client.host if request.client else None
+    # Pré-check rate limit : si déjà verrouillé, 429 sans toucher au hash
+    check = _rate_limiter.verifier_et_incrementer(body.email, client_ip)
+    if not check.autorise:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Trop de tentatives ({check.raison}). "
+                   f"Réessayez dans {check.retry_after_seconds}s.",
+            headers={"Retry-After": str(check.retry_after_seconds)},
+        )
+
     utilisateur = _users.get(body.email)
     if utilisateur is None or not utilisateur.actif:
+        # L'échec a déjà été compté par verifier_et_incrementer
+        log_audit(actor_email=body.email, action="LOGIN_FAILED",
+                  entity_type="Utilisateur", entity_id=body.email,
+                  details={"raison": "inconnu_ou_inactif"})
         raise HTTPException(status_code=401, detail="Identifiants invalides")
     if not verifier_mot_de_passe(body.mot_de_passe, utilisateur.hash_mot_de_passe):
+        log_audit(actor_email=body.email, action="LOGIN_FAILED",
+                  entity_type="Utilisateur", entity_id=body.email,
+                  details={"raison": "mdp_invalide"})
         raise HTTPException(status_code=401, detail="Identifiants invalides")
+    # Succès : reset le compteur d'échecs sur cet email (l'IP reste
+    # comptée pour éviter qu'un attaquant ne spamme plusieurs emails)
+    _rate_limiter.reset(body.email)
     # Rehash transparent si nécessaire
     if needs_rehash(utilisateur.hash_mot_de_passe):
         utilisateur.hash_mot_de_passe = hacher_mot_de_passe(body.mot_de_passe)
