@@ -52,6 +52,12 @@ from .pricing import (
     PriceBook,
     PriceBookVersion,
 )
+from .fleet import (
+    AssetMaintenanceHistoryEntry,
+    AssetMeterReading,
+    FleetAsset,
+    FleetAssetSummary,
+)
 
 
 class CatalogStore(Protocol):
@@ -796,3 +802,169 @@ class InMemoryCatalogStore:
             return None
         scored.sort(key=lambda x: x[0], reverse=True)
         return scored[0][1]
+
+    # =========================================================================
+    # Lot 5 : Flotte réelle (FleetAssets + relevés + historique maintenance)
+    # =========================================================================
+
+    def __post_init_lot5__(self):
+        self._fleet_assets: dict[UUID, FleetAsset] = {}
+        self._meter_readings: dict[UUID, AssetMeterReading] = {}
+        self._maintenance_history: dict[UUID, AssetMaintenanceHistoryEntry] = {}
+        self._fleet_asset_by_registration: dict[str, UUID] = {}
+        self._fleet_asset_by_asset_number: dict[str, UUID] = {}
+
+    def _ensure_lot5(self):
+        if not hasattr(self, "_fleet_assets"):
+            self.__post_init_lot5__()
+
+    # --- FleetAsset ---
+
+    def upsert_fleet_asset(self, a: FleetAsset) -> FleetAsset:
+        self._ensure_lot5()
+        if a.technical_variant_id not in self._variants:
+            raise ValueError(f"TechnicalVariant {a.technical_variant_id} inconnue")
+        existing_id = self._fleet_asset_by_asset_number.get(a.asset_number.upper())
+        if existing_id and existing_id != a.fleet_asset_id:
+            a = a.model_copy(update={"fleet_asset_id": existing_id})
+        self._fleet_assets[a.fleet_asset_id] = a
+        self._fleet_asset_by_asset_number[a.asset_number.upper()] = a.fleet_asset_id
+        self._fleet_asset_by_registration[a.vehicle_registration_number.upper()] = a.fleet_asset_id
+        return a
+
+    def get_fleet_asset(self, aid: UUID) -> FleetAsset | None:
+        self._ensure_lot5()
+        return self._fleet_assets.get(aid)
+
+    def get_fleet_asset_by_asset_number(self, asset_number: str) -> FleetAsset | None:
+        self._ensure_lot5()
+        aid = self._fleet_asset_by_asset_number.get(asset_number.upper())
+        return self._fleet_assets.get(aid) if aid else None
+
+    def list_fleet_assets(self, *, variant_id: UUID | None = None,
+                          operational_status=None) -> list[FleetAsset]:
+        self._ensure_lot5()
+        items = list(self._fleet_assets.values())
+        if variant_id is not None:
+            items = [a for a in items if a.technical_variant_id == variant_id]
+        if operational_status is not None:
+            items = [a for a in items if a.operational_status == operational_status]
+        return sorted(items, key=lambda a: a.asset_number)
+
+    # --- MeterReadings ---
+
+    def add_meter_reading(self, r: AssetMeterReading) -> AssetMeterReading:
+        """Enregistre un relevé compteur. Met à jour les compteurs courants
+        du FleetAsset si le relevé est plus récent que ceux stockés."""
+        self._ensure_lot5()
+        if r.fleet_asset_id not in self._fleet_assets:
+            raise ValueError(f"FleetAsset {r.fleet_asset_id} inconnu")
+        self._meter_readings[r.meter_reading_id] = r
+        # Mise à jour des compteurs courants (dernier relevé fait foi)
+        asset = self._fleet_assets[r.fleet_asset_id]
+        if r.mileage_km >= asset.current_mileage_km:
+            asset.current_mileage_km = r.mileage_km
+        if r.engine_hours >= asset.current_engine_hours:
+            asset.current_engine_hours = r.engine_hours
+        if r.country_iso:
+            country = self.get_country_by_iso(r.country_iso)
+            if country:
+                asset.current_country_id = country.country_id
+        return r
+
+    def list_meter_readings(self, fleet_asset_id: UUID) -> list[AssetMeterReading]:
+        self._ensure_lot5()
+        readings = [r for r in self._meter_readings.values() if r.fleet_asset_id == fleet_asset_id]
+        return sorted(readings, key=lambda x: x.reading_date, reverse=True)
+
+    # --- MaintenanceHistory ---
+
+    def add_maintenance_history(self, h: AssetMaintenanceHistoryEntry) -> AssetMaintenanceHistoryEntry:
+        """Enregistre une opération de maintenance. Met à jour les
+        last_{hm1,hm2,hm3,bogie_swap,vgi}_date du FleetAsset selon le code."""
+        self._ensure_lot5()
+        if h.fleet_asset_id not in self._fleet_assets:
+            raise ValueError(f"FleetAsset {h.fleet_asset_id} inconnu")
+        self._maintenance_history[h.maintenance_history_id] = h
+        if h.status.value == "completed" and h.completed_at:
+            asset = self._fleet_assets[h.fleet_asset_id]
+            code = h.operation_code.upper()
+            mapping = {
+                "HM1": "last_hm1_date",
+                "HM2": "last_hm2_date",
+                "HM3": "last_hm3_date",
+                "BOGIE_SWAP": "last_bogie_swap_date",
+                "VGI": "last_vgi_date",
+            }
+            attr = mapping.get(code)
+            if attr:
+                setattr(asset, attr, h.completed_at)
+        return h
+
+    def list_maintenance_history(self, fleet_asset_id: UUID) -> list[AssetMaintenanceHistoryEntry]:
+        self._ensure_lot5()
+        entries = [h for h in self._maintenance_history.values() if h.fleet_asset_id == fleet_asset_id]
+        return sorted(entries, key=lambda x: x.completed_at or x.planned_date or x.recorded_at.date(), reverse=True)
+
+    # --- Summary helper ---
+
+    def compute_fleet_asset_summary(self, fleet_asset_id: UUID) -> FleetAssetSummary | None:
+        """Agrège l'état courant + les prochaines échéances HM."""
+        self._ensure_lot5()
+        asset = self._fleet_assets.get(fleet_asset_id)
+        if asset is None:
+            return None
+        variant = self._variants.get(asset.technical_variant_id)
+        variant_code = variant.variant_code if variant else "?"
+
+        # Pays courant
+        country_iso = None
+        if asset.current_country_id and asset.current_country_id in self._countries:
+            country_iso = self._countries[asset.current_country_id].iso_alpha2
+
+        summary = FleetAssetSummary(
+            fleet_asset_id=asset.fleet_asset_id,
+            asset_number=asset.asset_number,
+            vehicle_registration_number=asset.vehicle_registration_number,
+            technical_variant_code=variant_code,
+            operational_status=asset.operational_status,
+            ownership_status=asset.ownership_status,
+            current_mileage_km=asset.current_mileage_km,
+            current_engine_hours=asset.current_engine_hours,
+            age_years=round(asset.age_years(), 2),
+            manufacturing_year=asset.manufacturing_year,
+            current_country_iso=country_iso,
+        )
+
+        # Calcule les prochaines échéances HM à partir des intervalles
+        # des MaintenanceOperation connues
+        if hasattr(self, "_maintenance_operations"):
+            for op in self._maintenance_operations.values():
+                code = op.operation_code.upper()
+                if code == "HM1" and op.interval_mileage_km:
+                    # Dernière HM1 à mileage proche de last_hm1_date, ou 0
+                    base_km = 0
+                    if asset.last_hm1_date:
+                        # On estime avec current - interval (approximation)
+                        base_km = max(0, asset.current_mileage_km - op.interval_mileage_km)
+                    summary.next_hm1_due_km = (base_km // op.interval_mileage_km + 1) * op.interval_mileage_km
+                elif code == "HM2" and op.interval_mileage_km:
+                    summary.next_hm2_due_km = (
+                        (asset.current_mileage_km // op.interval_mileage_km) + 1
+                    ) * op.interval_mileage_km
+                elif code == "HM3" and op.interval_mileage_km:
+                    summary.next_hm3_due_km = (
+                        (asset.current_mileage_km // op.interval_mileage_km) + 1
+                    ) * op.interval_mileage_km
+                elif code == "VGI" and op.interval_months:
+                    from datetime import timedelta
+                    base_date = asset.last_vgi_date or asset.commissioning_date
+                    summary.next_vgi_due_date = base_date + timedelta(days=op.interval_months * 30)
+
+        # Km restant avant la prochaine HM (toute HM)
+        candidates = [v for v in [summary.next_hm1_due_km, summary.next_hm2_due_km, summary.next_hm3_due_km] if v]
+        if candidates:
+            next_hm = min(candidates)
+            summary.km_until_next_hm = max(0, next_hm - asset.current_mileage_km)
+
+        return summary

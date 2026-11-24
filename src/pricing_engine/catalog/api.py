@@ -55,6 +55,13 @@ from .quote import (
     QuoteStatus,
 )
 from .quote_store import InMemoryQuoteStore, QuoteService, QuoteStore
+from .fleet import (
+    AssetMaintenanceHistoryEntry,
+    AssetMeterReading,
+    FleetAsset,
+    OperationalStatus,
+    OwnershipStatus,
+)
 from .store import CatalogStore, InMemoryCatalogStore
 from .usage import (
     EngineHoursBand,
@@ -672,5 +679,79 @@ def build_catalog_router(
             quote_store.delete_quote(quote_id)
             from fastapi import Response
             return Response(status_code=204)
+
+    # =========================================================================
+    # Lot 5 — Flotte réelle (FleetAssets + MeterReadings + MaintenanceHistory)
+    # =========================================================================
+
+    @router.get("/fleet-assets", response_model=list[FleetAsset])
+    def list_fleet_assets(
+        variant_id: UUID | None = Query(default=None),
+        operational_status: OperationalStatus | None = Query(default=None),
+        store: CatalogStore = Depends(get_store),
+    ):
+        return store.list_fleet_assets(variant_id=variant_id, operational_status=operational_status)
+
+    @router.get("/fleet-assets/{asset_id}", response_model=FleetAsset)
+    def get_fleet_asset(asset_id: UUID, store: CatalogStore = Depends(get_store)):
+        a = store.get_fleet_asset(asset_id)
+        if a is None:
+            raise HTTPException(404, "FleetAsset inconnu")
+        return a
+
+    @router.post("/fleet-assets", response_model=FleetAsset)
+    def upsert_fleet_asset(
+        payload: FleetAsset,
+        _=Depends(require_admin),
+        store: CatalogStore = Depends(get_store),
+    ):
+        try:
+            return store.upsert_fleet_asset(payload)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+
+    @router.get("/fleet-assets/{asset_id}/summary")
+    def get_fleet_asset_summary(asset_id: UUID, store: CatalogStore = Depends(get_store)):
+        s = store.compute_fleet_asset_summary(asset_id)
+        if s is None:
+            raise HTTPException(404, "FleetAsset inconnu")
+        return s.model_dump(mode="json")
+
+    @router.get("/fleet-assets/{asset_id}/meter-readings", response_model=list[AssetMeterReading])
+    def list_meter_readings(asset_id: UUID, store: CatalogStore = Depends(get_store)):
+        return store.list_meter_readings(asset_id)
+
+    @router.post("/fleet-assets/{asset_id}/meter-readings", response_model=AssetMeterReading)
+    def add_meter_reading(
+        asset_id: UUID,
+        payload: AssetMeterReading,
+        _=Depends(require_admin),
+        store: CatalogStore = Depends(get_store),
+    ):
+        # Force la cohérence : le fleet_asset_id du payload doit correspondre
+        payload_corrige = payload.model_copy(update={"fleet_asset_id": asset_id})
+        try:
+            return store.add_meter_reading(payload_corrige)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+
+    @router.get("/fleet-assets/{asset_id}/maintenance-history",
+                response_model=list[AssetMaintenanceHistoryEntry])
+    def list_maintenance_history(asset_id: UUID, store: CatalogStore = Depends(get_store)):
+        return store.list_maintenance_history(asset_id)
+
+    @router.post("/fleet-assets/{asset_id}/maintenance-history",
+                 response_model=AssetMaintenanceHistoryEntry)
+    def add_maintenance_history(
+        asset_id: UUID,
+        payload: AssetMaintenanceHistoryEntry,
+        _=Depends(require_admin),
+        store: CatalogStore = Depends(get_store),
+    ):
+        payload_corrige = payload.model_copy(update={"fleet_asset_id": asset_id})
+        try:
+            return store.add_maintenance_history(payload_corrige)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
 
     return router

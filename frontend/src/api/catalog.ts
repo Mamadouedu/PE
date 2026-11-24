@@ -285,4 +285,17 @@ export const catalogApi = {
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
   },
+  // ----- Lot 5 : Flotte réelle -----
+  fleetAssets: (variantId?: string, operationalStatus?: string) => {
+    const params = new URLSearchParams();
+    if (variantId) params.set("variant_id", variantId);
+    if (operationalStatus) params.set("operational_status", operationalStatus);
+    return get<any[]>(`/api/v1/catalog/fleet-assets${params.toString() ? `?${params}` : ""}`);
+  },
+  fleetAssetSummary: (assetId: string) =>
+    get<any>(`/api/v1/catalog/fleet-assets/${assetId}/summary`),
+  fleetAssetMeterReadings: (assetId: string) =>
+    get<any[]>(`/api/v1/catalog/fleet-assets/${assetId}/meter-readings`),
+  fleetAssetMaintenanceHistory: (assetId: string) =>
+    get<any[]>(`/api/v1/catalog/fleet-assets/${assetId}/maintenance-history`),
 };

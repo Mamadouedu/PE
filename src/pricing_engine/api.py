@@ -58,6 +58,7 @@ from .catalog.quote_store import InMemoryQuoteStore, QuoteStore
 from .catalog.seed import seed_catalog_akiem
 from .catalog.seed_lot2 import seed_lot2
 from .catalog.seed_lot3 import seed_lot3
+from .catalog.seed_lot5 import seed_lot5
 from .catalog.store import CatalogStore, InMemoryCatalogStore
 from .assistant import AnthropicAssistant, Assistant, Message as MessageAssistant, ScriptedAssistant
 from .csv_import import (
@@ -250,6 +251,7 @@ _catalog_store: CatalogStore = InMemoryCatalogStore()
 seed_catalog_akiem(_catalog_store)
 seed_lot2(_catalog_store)
 seed_lot3(_catalog_store)
+seed_lot5(_catalog_store)
 
 # Quote store Lot 4
 _quote_store: QuoteStore = InMemoryQuoteStore()
