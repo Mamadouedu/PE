@@ -237,12 +237,19 @@ class QuoteService:
         service_level_code: str | None = None,
     ) -> tuple[QuoteLine, PricingCalculation]:
         """Ajoute une ligne à la quote, exécute le moteur v2, persiste
-        le PricingCalculation + composants + met à jour les totaux."""
+        le PricingCalculation + composants + met à jour les totaux.
+
+        **Atomicité** : si le chiffrage échoue après insertion de la ligne,
+        celle-ci est retirée (rollback applicatif). Garantit qu'on n'a
+        jamais une QuoteLine sans PricingCalculation attaché. Pour un
+        vrai `BEGIN;...COMMIT;` SQL multi-instructions, voir issue #ATOMIC
+        — nécessite de passer la session au QuoteStore."""
 
         from datetime import date as _date, timedelta as _td
         if start_date is None:
             start_date = _date.today()
 
+        # 1. Validations préalables : lèvent AVANT toute écriture
         variant = self._catalog.get_variant_by_code(technical_variant_code)
         if variant is None:
             raise ValueError(f"Variante {technical_variant_code} inconnue")
@@ -251,6 +258,31 @@ class QuoteService:
         if quote is None:
             raise ValueError(f"Quote {quote_id} inconnue")
 
+        # 2. Chiffrage AVANT insertion : si ça échoue (variante sans tarif,
+        #    palier manquant...), on n'a rien écrit à nettoyer
+        try:
+            resultat = self._engine.chiffrer(DemandeChiffrage(
+                technical_variant_code=variant.variant_code,
+                country_iso=country_iso,
+                duration_months=duration_months,
+                age_years=age_years,
+                annual_mileage_km=annual_mileage_km,
+                annual_engine_hours=annual_engine_hours,
+                ecm_provider_code=ecm_provider_code,
+                service_level_code=service_level_code,
+            ))
+        except ValueError:
+            # Rethrow tel quel : l'appelant verra l'erreur sans rollback
+            raise
+
+        # 3. Résolution versions (snapshot gelé)
+        dl_v = self._catalog.get_current_published_version("DL_STANDARD")
+        hm_v = self._catalog.get_current_published_version("HM_STANDARD")
+        om_v = self._catalog.get_current_published_version("OM_STANDARD")
+        niveau = self._calculer_niveau_validation(resultat)
+
+        # 4. Écriture : ligne puis calcul. En cas d'échec sur le calc,
+        #    on rollback la ligne pour éviter l'orphelin.
         lines = self._quotes.list_quote_lines(quote_id)
         line = QuoteLine(
             quote_id=quote_id,
@@ -267,53 +299,36 @@ class QuoteService:
         )
         self._quotes.add_quote_line(line)
 
-        # Chiffrage via moteur v2
-        resultat = self._engine.chiffrer(DemandeChiffrage(
-            technical_variant_code=variant.variant_code,
-            country_iso=country_iso,
-            duration_months=duration_months,
-            age_years=age_years,
-            annual_mileage_km=annual_mileage_km,
-            annual_engine_hours=annual_engine_hours,
-            ecm_provider_code=ecm_provider_code,
-            service_level_code=service_level_code,
-        ))
-
-        # Résoudre les ids de versions (pour le snapshot gelé)
-        dl_v = self._catalog.get_current_published_version("DL_STANDARD")
-        hm_v = self._catalog.get_current_published_version("HM_STANDARD")
-        om_v = self._catalog.get_current_published_version("OM_STANDARD")
-
-        total_monthly_ligne = resultat.total_mensuel * quantity
-        total_contract_ligne = total_monthly_ligne * duration_months
-        niveau = self._calculer_niveau_validation(resultat)
-
-        calc = PricingCalculation(
-            quote_line_id=line.quote_line_id,
-            dl_price_book_version_id=dl_v.price_book_version_id if dl_v else None,
-            hm_price_book_version_id=hm_v.price_book_version_id if hm_v else None,
-            om_price_book_version_id=om_v.price_book_version_id if om_v else None,
-            dl_version_label=resultat.versions_utilisees.get("DL_STANDARD"),
-            hm_version_label=resultat.versions_utilisees.get("HM_STANDARD"),
-            om_version_label=resultat.versions_utilisees.get("OM_STANDARD"),
-            dl_monthly=resultat.dl_mensuel or 0,
-            hm_monthly_provisioned=resultat.hm_mensuel_provisionne,
-            om_monthly=resultat.om_mensuel,
-            options_monthly=0,
-            total_monthly=resultat.total_mensuel,
-            total_contract=resultat.total_mensuel * duration_months,
-            floor_applied=resultat.plancher_applique or 0,
-            is_under_floor=(resultat.plancher_applique or 0) > 0,
-            niveau_validation=niveau,
-            warnings=resultat.warnings,
-        )
-        self._quotes.save_pricing_calculation(calc)
-
-        # Composants (explicabilité)
-        self._persister_composants(calc, resultat)
-
-        # Mettre à jour les totaux de la quote (somme des lignes)
-        self._recalculer_totaux_quote(quote_id)
+        try:
+            calc = PricingCalculation(
+                quote_line_id=line.quote_line_id,
+                dl_price_book_version_id=dl_v.price_book_version_id if dl_v else None,
+                hm_price_book_version_id=hm_v.price_book_version_id if hm_v else None,
+                om_price_book_version_id=om_v.price_book_version_id if om_v else None,
+                dl_version_label=resultat.versions_utilisees.get("DL_STANDARD"),
+                hm_version_label=resultat.versions_utilisees.get("HM_STANDARD"),
+                om_version_label=resultat.versions_utilisees.get("OM_STANDARD"),
+                dl_monthly=resultat.dl_mensuel or 0,
+                hm_monthly_provisioned=resultat.hm_mensuel_provisionne,
+                om_monthly=resultat.om_mensuel,
+                options_monthly=0,
+                total_monthly=resultat.total_mensuel,
+                total_contract=resultat.total_mensuel * duration_months,
+                floor_applied=resultat.plancher_applique or 0,
+                is_under_floor=(resultat.plancher_applique or 0) > 0,
+                niveau_validation=niveau,
+                warnings=resultat.warnings,
+            )
+            self._quotes.save_pricing_calculation(calc)
+            self._persister_composants(calc, resultat)
+            self._recalculer_totaux_quote(quote_id)
+        except Exception:
+            # Rollback applicatif : supprime la ligne orpheline
+            try:
+                self._quotes.delete_quote_line(line.quote_line_id)
+            except Exception:
+                pass  # Best-effort : on ne masque pas l'erreur originale
+            raise
 
         return line, calc
 
