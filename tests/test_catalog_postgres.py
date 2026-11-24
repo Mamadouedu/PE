@@ -65,14 +65,37 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _flush_redis_if_configured():
+    """Flush la DB Redis de REDIS_URL si elle est joignable.
+
+    Le rate limiter et les sessions Redis étant globaux par instance,
+    les échecs de login et tokens stale survivent entre tests PG qui
+    reloadent l'api. Isolation nécessaire."""
+    url = os.environ.get("REDIS_URL")
+    if not url:
+        return
+    try:
+        import redis
+        redis.Redis.from_url(url, socket_connect_timeout=1).flushdb()
+    except Exception:
+        pass
+
+
 @pytest.fixture
 def pg_engine():
     engine = create_engine(TEST_DATABASE_URL, future=True)
-    # Reset complet des tables catalog/quote/fleet avant chaque test
-    Base.metadata.drop_all(engine)
+    # Reset TOTAL du schema : drop_all(Base catalog) ne touche pas aux
+    # tables d'autres bases SQLAlchemy (Lot 1 original de
+    # pricing_engine.db), qui peuvent laisser des tables orphelines
+    # entre tests. DROP SCHEMA CASCADE garantit la table rase.
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+        conn.execute(text("GRANT ALL ON SCHEMA public TO pricing"))
+        conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
     create_all_catalog_tables(engine)
+    _flush_redis_if_configured()
     yield engine
-    Base.metadata.drop_all(engine)
     engine.dispose()
 
 

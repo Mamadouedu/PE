@@ -24,10 +24,11 @@ jobs:
           POSTGRES_PASSWORD: pricing
           POSTGRES_DB: pricing_test
         ports: ["5432:5432"]
-        # L'image Postgres a son propre healthcheck : on l'attend, sinon
-        # les premiers tests tombent en Connection refused.
+        # pg_isready par défaut tente le user "root" du runner et
+        # pollue les logs avec FATAL: role "root" does not exist.
+        # On lui passe explicitement le user applicatif.
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U pricing -d pricing_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
