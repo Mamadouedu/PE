@@ -120,6 +120,22 @@ Les deux détectent `TEST_DATABASE_URL` (défaut
 joignable, ils sont ignorés automatiquement. Tous les autres tournent en
 SQLite in-memory, sans base.
 
+## Sessions multi-instance (Redis)
+
+Par défaut les sessions utilisateurs sont en mémoire : OK pour un seul
+process uvicorn, pas pour un déploiement derrière un load-balancer avec
+plusieurs workers. Pour partager les sessions, exporter `REDIS_URL` :
+
+```bash
+redis-server --daemonize yes          # ou docker run -p 6379:6379 redis:7
+export REDIS_URL="redis://localhost:6379/0"
+```
+
+L'API détecte la variable au boot (ping Redis pour valider la connexion),
+sinon reste en in-memory. Les tokens sont stockés en hash Redis avec TTL
+natif, et un set `pricinghub:user_tokens:<email>` permet le revoke en
+bloc côté `DELETE /auth/me` et à la suppression d'un utilisateur.
+
 ## Lancer l'API
 
 ```bash

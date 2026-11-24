@@ -46,11 +46,11 @@ from fastapi import UploadFile, File
 
 from .users import (
     DUREE_SESSION_SECONDES,
-    InMemorySessionStore,
     InMemoryUserStore,
     Role,
     Utilisateur,
     hacher_mot_de_passe,
+    make_session_store,
     needs_rehash,
     verifier_mot_de_passe,
 )
@@ -241,7 +241,9 @@ def get_assistant() -> Assistant:
 # ---------------- Store utilisateurs + sessions ----------------
 
 _users = InMemoryUserStore()
-_sessions = InMemorySessionStore()
+# Sessions : Redis si REDIS_URL défini (multi-instance uvicorn),
+# sinon in-memory (dev, mono-process).
+_sessions = make_session_store(os.environ.get("REDIS_URL"))
 
 
 def _seeder_utilisateurs_par_defaut() -> None:

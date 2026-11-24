@@ -187,6 +187,13 @@ class Session:
         return time.time() > self.expire_le
 
 
+class SessionStore(Protocol):
+    def creer(self, email: str) -> Session: ...
+    def get(self, token: str) -> Session | None: ...
+    def revoquer(self, token: str) -> None: ...
+    def revoquer_pour(self, email: str) -> int: ...
+
+
 class InMemorySessionStore:
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
@@ -215,3 +222,112 @@ class InMemorySessionStore:
         for t in a_virer:
             self._sessions.pop(t, None)
         return len(a_virer)
+
+
+class RedisSessionStore:
+    """Sessions partagées via Redis pour un déploiement multi-instance
+    uvicorn. Chaque session est une clé `pricinghub:session:<token>` avec
+    TTL natif Redis. Un set indexé `pricinghub:user_tokens:<email>`
+    liste les tokens d'un utilisateur pour un revoke en bloc.
+
+    Robustesse : `creer` et `revoquer_pour` utilisent une pipeline
+    atomique. L'expiration côté Redis TTL dispense de vérifier
+    `session.expiree()` à chaque lecture, mais on garde la vérif en
+    doublure pour les cas limites (horloge décalée, race SET/EXPIRE).
+    """
+
+    _KEY_SESSION = "pricinghub:session:"
+    _KEY_USER_TOKENS = "pricinghub:user_tokens:"
+
+    def __init__(self, redis_client) -> None:
+        self._r = redis_client
+
+    @staticmethod
+    def _skey(token: str) -> str:
+        return RedisSessionStore._KEY_SESSION + token
+
+    @staticmethod
+    def _ukey(email: str) -> str:
+        return RedisSessionStore._KEY_USER_TOKENS + email.lower()
+
+    def creer(self, email: str) -> Session:
+        token = secrets.token_urlsafe(32)
+        session = Session(token=token, email=email)
+        skey = self._skey(token)
+        ukey = self._ukey(email)
+        with self._r.pipeline() as p:
+            p.hset(skey, mapping={
+                "token": token,
+                "email": email,
+                "expire_le": str(session.expire_le),
+            })
+            p.expire(skey, DUREE_SESSION_SECONDES)
+            p.sadd(ukey, token)
+            # TTL du set user_tokens : prolongé à chaque création, GC
+            # naturel après inactivité. +1h de marge sur la session la
+            # plus longue.
+            p.expire(ukey, DUREE_SESSION_SECONDES + 3600)
+            p.execute()
+        return session
+
+    def _read_session(self, token: str) -> Session | None:
+        """Lit depuis Redis sans effet de bord. Ne tient pas compte de
+        l'expiration ; appelée par get() qui elle vérifie."""
+        data = self._r.hgetall(self._skey(token))
+        if not data:
+            return None
+        decoded = {
+            (k.decode() if isinstance(k, bytes) else k):
+            (v.decode() if isinstance(v, bytes) else v)
+            for k, v in data.items()
+        }
+        try:
+            expire_le = float(decoded["expire_le"])
+        except (KeyError, ValueError):
+            return None
+        return Session(token=decoded["token"], email=decoded["email"],
+                       expire_le=expire_le)
+
+    def get(self, token: str) -> Session | None:
+        session = self._read_session(token)
+        if session is None:
+            return None
+        if session.expiree():
+            # Redis TTL aurait dû l'expirer ; on nettoie par sécurité
+            self.revoquer(token)
+            return None
+        return session
+
+    def revoquer(self, token: str) -> None:
+        session = self._read_session(token)
+        with self._r.pipeline() as p:
+            p.delete(self._skey(token))
+            if session is not None:
+                p.srem(self._ukey(session.email), token)
+            p.execute()
+
+    def revoquer_pour(self, email: str) -> int:
+        ukey = self._ukey(email)
+        tokens = self._r.smembers(ukey)
+        if not tokens:
+            return 0
+        tokens_str = [t.decode() if isinstance(t, bytes) else t for t in tokens]
+        with self._r.pipeline() as p:
+            for t in tokens_str:
+                p.delete(self._skey(t))
+            p.delete(ukey)
+            p.execute()
+        return len(tokens_str)
+
+
+def make_session_store(redis_url: str | None = None) -> SessionStore:
+    """Factory : renvoie un RedisSessionStore si redis_url est fourni,
+    sinon un InMemorySessionStore (OK pour un seul process uvicorn)."""
+    if not redis_url:
+        return InMemorySessionStore()
+    import redis
+    client = redis.Redis.from_url(redis_url, decode_responses=False)
+    # Ping dès la construction : on veut une erreur claire au boot,
+    # pas au premier login.
+    client.ping()
+    return RedisSessionStore(client)
