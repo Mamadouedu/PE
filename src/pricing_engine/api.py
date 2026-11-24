@@ -51,6 +51,7 @@ from .users import (
     Role,
     Utilisateur,
     hacher_mot_de_passe,
+    needs_rehash,
     verifier_mot_de_passe,
 )
 from .catalog.api import build_catalog_router
@@ -429,12 +430,20 @@ class _CreateUserRequest(BaseModel):
 
 @app.post("/api/v1/auth/login")
 def login(body: _LoginRequest) -> dict:
-    """Vérifie le mot de passe, ouvre une session, renvoie un token Bearer."""
+    """Vérifie le mot de passe, ouvre une session, renvoie un token Bearer.
+
+    Migration douce : si le hash stocké est un ancien PBKDF2 (ou un Argon2id
+    avec des paramètres obsolètes), on le rehash en Argon2id courant au
+    passage, sans que l'utilisateur voie quoi que ce soit."""
     utilisateur = _users.get(body.email)
     if utilisateur is None or not utilisateur.actif:
         raise HTTPException(status_code=401, detail="Identifiants invalides")
     if not verifier_mot_de_passe(body.mot_de_passe, utilisateur.hash_mot_de_passe):
         raise HTTPException(status_code=401, detail="Identifiants invalides")
+    # Rehash transparent si nécessaire
+    if needs_rehash(utilisateur.hash_mot_de_passe):
+        utilisateur.hash_mot_de_passe = hacher_mot_de_passe(body.mot_de_passe)
+        _users.mettre_a_jour(utilisateur)
     session = _sessions.creer(utilisateur.email)
     return {
         "token": session.token,

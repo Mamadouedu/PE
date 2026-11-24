@@ -8,10 +8,15 @@ Modèle simple :
   uvicorn ; à remplacer par Redis / JWT signé pour un vrai déploiement
   multi-instance)
 
-Hachage des mots de passe : PBKDF2-HMAC-SHA256 via `hashlib.pbkdf2_hmac`
-(stdlib, 310_000 itérations — recommandation OWASP 2023). Pas de
-dépendance externe (bcrypt/argon2 feraient mieux mais imposeraient une
-installation que l'équipe pricing n'a pas forcément).
+Hachage des mots de passe : **Argon2id** via `argon2-cffi`, winner du
+Password Hashing Competition (PHC) et recommandation OWASP 2024.
+Memory-hard, résistant GPU/ASIC. Format PHC string (commence par
+`$argon2id$`).
+
+Compatibilité ascendante : les anciens hashes PBKDF2 (format
+`pbkdf2$<iter>$<sel>$<hash>`) restent vérifiables. Au prochain login
+réussi d'un utilisateur PBKDF2, on peut réécrire son hash en Argon2id
+via `verifier_et_mettre_a_jour_mot_de_passe()` (migration douce).
 """
 
 from __future__ import annotations
@@ -22,6 +27,9 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol
+
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 
 class Role(str, Enum):
@@ -56,17 +64,27 @@ PERMISSIONS = {
 
 ITERATIONS_PBKDF2 = 310_000
 
+# Paramètres Argon2id (OWASP 2024 : balance sécurité/latence <500ms)
+# time_cost=3 iterations, memory_cost=64MiB, parallelism=4 lanes
+_HASHER = PasswordHasher(
+    time_cost=3,
+    memory_cost=65536,  # 64 MiB
+    parallelism=4,
+    hash_len=32,
+    salt_len=16,
+)
 
-def hacher_mot_de_passe(mot_de_passe: str, sel: bytes | None = None) -> str:
-    """PBKDF2-HMAC-SHA256. Renvoie une string `pbkdf2$<iterations>$<sel_hex>$<hash_hex>`
-    ready à être stockée."""
-    if sel is None:
-        sel = secrets.token_bytes(16)
-    derive = hashlib.pbkdf2_hmac("sha256", mot_de_passe.encode("utf-8"), sel, ITERATIONS_PBKDF2)
-    return f"pbkdf2${ITERATIONS_PBKDF2}${sel.hex()}${derive.hex()}"
+
+def hacher_mot_de_passe(mot_de_passe: str) -> str:
+    """Argon2id via argon2-cffi. Renvoie une string au format PHC
+    (`$argon2id$v=19$m=65536,t=3,p=4$<sel_b64>$<hash_b64>`) prête à
+    être stockée. Sel aléatoire généré par argon2-cffi."""
+    return _HASHER.hash(mot_de_passe)
 
 
-def verifier_mot_de_passe(mot_de_passe: str, hash_stocke: str) -> bool:
+def _verifier_pbkdf2_legacy(mot_de_passe: str, hash_stocke: str) -> bool:
+    """Compat pour les hashes existants PBKDF2. Au prochain login réussi,
+    le hash sera réécrit en Argon2id via `verifier_et_mettre_a_jour`."""
     try:
         schema, iter_s, sel_hex, hash_hex = hash_stocke.split("$")
         if schema != "pbkdf2":
@@ -78,6 +96,34 @@ def verifier_mot_de_passe(mot_de_passe: str, hash_stocke: str) -> bool:
         return secrets.compare_digest(derive, attendu)
     except (ValueError, AttributeError):
         return False
+
+
+def verifier_mot_de_passe(mot_de_passe: str, hash_stocke: str) -> bool:
+    """Vérifie un mot de passe. Dispatch selon le format du hash :
+    - `$argon2id$...` → argon2-cffi verify
+    - `pbkdf2$...` → legacy PBKDF2 (anciens comptes)
+    """
+    if hash_stocke.startswith("$argon2"):
+        try:
+            return _HASHER.verify(hash_stocke, mot_de_passe)
+        except (VerifyMismatchError, InvalidHashError):
+            return False
+    if hash_stocke.startswith("pbkdf2$"):
+        return _verifier_pbkdf2_legacy(mot_de_passe, hash_stocke)
+    return False
+
+
+def needs_rehash(hash_stocke: str) -> bool:
+    """True si le hash devrait être réécrit : legacy PBKDF2, ou Argon2id
+    avec des paramètres inférieurs à ceux courants."""
+    if hash_stocke.startswith("pbkdf2$"):
+        return True
+    if hash_stocke.startswith("$argon2"):
+        try:
+            return _HASHER.check_needs_rehash(hash_stocke)
+        except InvalidHashError:
+            return True
+    return True
 
 
 @dataclass

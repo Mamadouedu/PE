@@ -554,13 +554,29 @@ def build_catalog_router(
         def list_quotes(
             mine: bool = Query(default=False),
             status: QuoteStatus | None = Query(default=None),
+            limit: int = Query(default=50, ge=1, le=500, description="Taille de page (max 500)"),
+            offset: int = Query(default=0, ge=0, description="Nombre d'items à sauter"),
             quote_store: QuoteStore = Depends(get_quote_store),
             user = Depends(get_current_user),
         ):
-            # Permission : KAM voit uniquement ses quotes, PRICING/DIRECTION/ADMIN voient tout
+            """Pagination par limit/offset. Headers X-Total-Count + X-Limit +
+            X-Offset pour permettre au client de construire son contrôleur."""
             if mine or not user.a_permission("voir_toutes_offres"):
-                return quote_store.list_quotes(created_by=user.email, status=status)
-            return quote_store.list_quotes(status=status)
+                items = quote_store.list_quotes(created_by=user.email, status=status)
+            else:
+                items = quote_store.list_quotes(status=status)
+            total = len(items)
+            page = items[offset:offset + limit]
+            # Les headers sont ajoutés via Response côté FastAPI
+            from fastapi import Response as _R
+            resp = _R(
+                content=__import__("json").dumps([q.model_dump(mode="json") for q in page]),
+                media_type="application/json",
+            )
+            resp.headers["X-Total-Count"] = str(total)
+            resp.headers["X-Limit"] = str(limit)
+            resp.headers["X-Offset"] = str(offset)
+            return resp
 
         @router.get("/quotes/{quote_id}")
         def get_quote(
@@ -684,13 +700,29 @@ def build_catalog_router(
     # Lot 5 — Flotte réelle (FleetAssets + MeterReadings + MaintenanceHistory)
     # =========================================================================
 
-    @router.get("/fleet-assets", response_model=list[FleetAsset])
+    @router.get("/fleet-assets")
     def list_fleet_assets(
         variant_id: UUID | None = Query(default=None),
         operational_status: OperationalStatus | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
         store: CatalogStore = Depends(get_store),
     ):
-        return store.list_fleet_assets(variant_id=variant_id, operational_status=operational_status)
+        """Pagination limit/offset + headers X-Total-Count."""
+        items = store.list_fleet_assets(
+            variant_id=variant_id, operational_status=operational_status,
+        )
+        total = len(items)
+        page = items[offset:offset + limit]
+        from fastapi import Response as _R
+        resp = _R(
+            content=__import__("json").dumps([a.model_dump(mode="json") for a in page]),
+            media_type="application/json",
+        )
+        resp.headers["X-Total-Count"] = str(total)
+        resp.headers["X-Limit"] = str(limit)
+        resp.headers["X-Offset"] = str(offset)
+        return resp
 
     @router.get("/fleet-assets/{asset_id}", response_model=FleetAsset)
     def get_fleet_asset(asset_id: UUID, store: CatalogStore = Depends(get_store)):
