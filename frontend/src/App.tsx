@@ -7,6 +7,7 @@ import { versVueKam, type OffreKam } from "./api/offre";
 import { AdminReferentiel } from "./components/AdminReferentiel";
 import { Assistant } from "./components/Assistant";
 import { Catalogue } from "./components/Catalogue";
+import { ConfigurateurV2 } from "./components/ConfigurateurV2";
 import { Comparateur } from "./components/Comparateur";
 import { ConfigurateurForm } from "./components/ConfigurateurForm";
 import { Login } from "./components/Login";
@@ -28,6 +29,7 @@ function messageErreur(detail: unknown): string {
 type Onglet =
   | "tableau_bord"
   | "configurateur"
+  | "configurateur_v2"
   | "offres"
   | "derogations"
   | "referentiel"
@@ -44,6 +46,7 @@ interface DefinitionOnglet {
 const ONGLETS: DefinitionOnglet[] = [
   { id: "tableau_bord", libelle: "Tableau de bord" },
   { id: "configurateur", libelle: "Configurateur" },
+  { id: "configurateur_v2", libelle: "Configurateur v2" },
   { id: "offres", libelle: "Offres émises" },
   { id: "derogations", libelle: "Dérogations" },
   { id: "referentiel", libelle: "Référentiel" },
@@ -177,6 +180,7 @@ export default function App() {
         {ongletActif === "offres" && <RegistreOffres />}
         {ongletActif === "derogations" && <RegistreDerogations />}
         {ongletActif === "referentiel" && <VueReferentiel />}
+        {ongletActif === "configurateur_v2" && <ConfigurateurV2 />}
         {ongletActif === "catalogue" && <Catalogue />}
         {ongletActif === "admin" && <AdminReferentiel emailKam={kamEmail} />}
         {ongletActif === "assistant" && <Assistant />}

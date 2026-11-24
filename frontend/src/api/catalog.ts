@@ -223,4 +223,66 @@ export const catalogApi = {
     }
     return (await r.json()) as ChiffrageResponse;
   },
+  // ----- Lot 4 : Quotes -----
+  createQuote: async (clientCode: string, clientName: string) => {
+    const r = await fetch(`${BASE_URL}/api/v1/catalog/quotes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...entetesAuth() },
+      body: JSON.stringify({ client_code: clientCode, client_name: clientName }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+  listQuotes: async (mine: boolean = false) => {
+    const r = await fetch(`${BASE_URL}/api/v1/catalog/quotes${mine ? "?mine=true" : ""}`, {
+      headers: entetesAuth(),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+  getQuote: async (quoteId: string) => {
+    const r = await fetch(`${BASE_URL}/api/v1/catalog/quotes/${quoteId}`, { headers: entetesAuth() });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+  addQuoteLine: async (quoteId: string, line: any) => {
+    const r = await fetch(`${BASE_URL}/api/v1/catalog/quotes/${quoteId}/lines`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...entetesAuth() },
+      body: JSON.stringify(line),
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      throw new Error(`HTTP ${r.status} : ${txt}`);
+    }
+    return r.json();
+  },
+  deleteQuoteLine: async (quoteId: string, lineId: string) => {
+    const r = await fetch(`${BASE_URL}/api/v1/catalog/quotes/${quoteId}/lines/${lineId}`, {
+      method: "DELETE", headers: entetesAuth(),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  },
+  submitQuote: async (quoteId: string) => {
+    const r = await fetch(`${BASE_URL}/api/v1/catalog/quotes/${quoteId}/submit`, {
+      method: "POST", headers: entetesAuth(),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+  decisionQuote: async (quoteId: string, approved: boolean, comment: string = "") => {
+    const r = await fetch(`${BASE_URL}/api/v1/catalog/quotes/${quoteId}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...entetesAuth() },
+      body: JSON.stringify({ approved, comment }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+  deleteQuote: async (quoteId: string) => {
+    const r = await fetch(`${BASE_URL}/api/v1/catalog/quotes/${quoteId}`, {
+      method: "DELETE", headers: entetesAuth(),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  },
 };

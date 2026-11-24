@@ -54,6 +54,7 @@ from .users import (
     verifier_mot_de_passe,
 )
 from .catalog.api import build_catalog_router
+from .catalog.quote_store import InMemoryQuoteStore, QuoteStore
 from .catalog.seed import seed_catalog_akiem
 from .catalog.seed_lot2 import seed_lot2
 from .catalog.seed_lot3 import seed_lot3
@@ -250,6 +251,13 @@ seed_catalog_akiem(_catalog_store)
 seed_lot2(_catalog_store)
 seed_lot3(_catalog_store)
 
+# Quote store Lot 4
+_quote_store: QuoteStore = InMemoryQuoteStore()
+
+
+def get_quote_store() -> QuoteStore:
+    return _quote_store
+
 
 def get_catalog_store() -> CatalogStore:
     return _catalog_store
@@ -313,9 +321,14 @@ def exiger_permission(permission: str):
     return _verifier
 
 
-# Monte le router catalogue PricingHub (Lot 1 : référentiel locomotive).
-# Doit être après `get_catalog_store` et `exiger_permission`.
-app.include_router(build_catalog_router(get_catalog_store, exiger_permission))
+# Monte le router catalogue PricingHub (Lots 1→4).
+# Doit être après `get_catalog_store`, `exiger_permission`, `get_quote_store`
+# et `get_current_user`.
+app.include_router(build_catalog_router(
+    get_catalog_store, exiger_permission,
+    get_quote_store=get_quote_store,
+    get_current_user=get_current_user,
+))
 
 
 def get_utilisateur(utilisateur: Utilisateur = Depends(get_current_user)) -> str:

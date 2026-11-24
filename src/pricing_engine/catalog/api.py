@@ -45,6 +45,16 @@ from .pricing import (
     PriceBookVersion,
 )
 from .pricing_engine_v2 import DemandeChiffrage, MoteurPrixV2
+from .quote import (
+    AppliedPricingRule,
+    PricingCalculation,
+    PricingCalculationComponent,
+    Quote,
+    QuoteLine,
+    QuoteLineOption,
+    QuoteStatus,
+)
+from .quote_store import InMemoryQuoteStore, QuoteService, QuoteStore
 from .store import CatalogStore, InMemoryCatalogStore
 from .usage import (
     EngineHoursBand,
@@ -67,13 +77,38 @@ class ChiffrageRequest(BaseModel):
     options_monthly: float = 0
 
 
+class CreateQuoteRequest(BaseModel):
+    client_code: str
+    client_name: str
+
+
+class AddQuoteLineRequest(BaseModel):
+    technical_variant_code: str
+    country_iso: str
+    duration_months: int
+    age_years: float
+    annual_mileage_km: int
+    annual_engine_hours: float = 0
+    quantity: int = 1
+    ecm_provider_code: str | None = None
+    service_level_code: str | None = None
+
+
+class DecisionQuoteRequest(BaseModel):
+    approved: bool
+    comment: str = ""
+
+
 def build_catalog_router(
     get_store: Callable[[], CatalogStore],
     exiger_permission: Callable[[str], Callable],
+    get_quote_store: Callable[[], QuoteStore] | None = None,
+    get_current_user: Callable | None = None,
 ) -> APIRouter:
     """Construit le router. Les dépendances `get_store` et `exiger_permission`
     sont injectées par `api.py` qui est le propriétaire des instances
-    globales."""
+    globales. `get_quote_store` et `get_current_user` activent les endpoints
+    Quote du Lot 4."""
 
     router = APIRouter(prefix="/api/v1/catalog", tags=["catalog"])
     require_admin = exiger_permission("admin_referentiel")
@@ -487,5 +522,155 @@ def build_catalog_router(
             "versions_utilisees": res.versions_utilisees,
             "plancher_applique": res.plancher_applique,
         }
+
+    # =========================================================================
+    # Lot 4 — Quote refondu
+    # =========================================================================
+
+    if get_quote_store is not None and get_current_user is not None:
+
+        def _service(
+            catalog_store: CatalogStore = Depends(get_store),
+            quote_store: QuoteStore = Depends(get_quote_store),
+        ) -> QuoteService:
+            return QuoteService(catalog_store, quote_store)
+
+        @router.post("/quotes", response_model=Quote)
+        def create_quote(
+            body: CreateQuoteRequest,
+            svc: QuoteService = Depends(_service),
+            user = Depends(get_current_user),
+        ):
+            return svc.creer_quote(body.client_code, body.client_name, user.email)
+
+        @router.get("/quotes")
+        def list_quotes(
+            mine: bool = Query(default=False),
+            status: QuoteStatus | None = Query(default=None),
+            quote_store: QuoteStore = Depends(get_quote_store),
+            user = Depends(get_current_user),
+        ):
+            # Permission : KAM voit uniquement ses quotes, PRICING/DIRECTION/ADMIN voient tout
+            if mine or not user.a_permission("voir_toutes_offres"):
+                return quote_store.list_quotes(created_by=user.email, status=status)
+            return quote_store.list_quotes(status=status)
+
+        @router.get("/quotes/{quote_id}")
+        def get_quote(
+            quote_id: UUID,
+            quote_store: QuoteStore = Depends(get_quote_store),
+            user = Depends(get_current_user),
+        ):
+            quote = quote_store.get_quote(quote_id)
+            if quote is None:
+                raise HTTPException(404, "Quote inconnue")
+            if not user.a_permission("voir_toutes_offres") and quote.created_by.lower() != user.email.lower():
+                raise HTTPException(403, "Pas autorisé à voir cette quote")
+            lines = quote_store.list_quote_lines(quote_id)
+            # Embed calculations + components
+            lines_with_calc = []
+            for line in lines:
+                calc = quote_store.get_pricing_calculation_for_line(line.quote_line_id)
+                components = quote_store.list_components(calc.pricing_calculation_id) if calc else []
+                rules = quote_store.list_applied_rules(calc.pricing_calculation_id) if calc else []
+                lines_with_calc.append({
+                    "line": line.model_dump(mode="json"),
+                    "calculation": calc.model_dump(mode="json") if calc else None,
+                    "components": [c.model_dump(mode="json") for c in components],
+                    "applied_rules": [r.model_dump(mode="json") for r in rules],
+                })
+            return {"quote": quote.model_dump(mode="json"), "lines": lines_with_calc}
+
+        @router.post("/quotes/{quote_id}/lines")
+        def add_line(
+            quote_id: UUID,
+            body: AddQuoteLineRequest,
+            svc: QuoteService = Depends(_service),
+            user = Depends(get_current_user),
+            quote_store: QuoteStore = Depends(get_quote_store),
+        ):
+            quote = quote_store.get_quote(quote_id)
+            if quote is None:
+                raise HTTPException(404, "Quote inconnue")
+            if quote.created_by.lower() != user.email.lower() and not user.a_permission("voir_toutes_offres"):
+                raise HTTPException(403, "Pas autorisé à modifier cette quote")
+            try:
+                line, calc = svc.ajouter_ligne_et_chiffrer(
+                    quote_id=quote_id,
+                    technical_variant_code=body.technical_variant_code,
+                    country_iso=body.country_iso,
+                    duration_months=body.duration_months,
+                    age_years=body.age_years,
+                    annual_mileage_km=body.annual_mileage_km,
+                    annual_engine_hours=body.annual_engine_hours,
+                    quantity=body.quantity,
+                    ecm_provider_code=body.ecm_provider_code,
+                    service_level_code=body.service_level_code,
+                )
+            except ValueError as e:
+                raise HTTPException(422, str(e))
+            return {
+                "line": line.model_dump(mode="json"),
+                "calculation": calc.model_dump(mode="json"),
+            }
+
+        @router.delete("/quotes/{quote_id}/lines/{line_id}", status_code=204)
+        def delete_line(
+            quote_id: UUID,
+            line_id: UUID,
+            quote_store: QuoteStore = Depends(get_quote_store),
+            user = Depends(get_current_user),
+        ):
+            quote = quote_store.get_quote(quote_id)
+            if quote is None:
+                raise HTTPException(404, "Quote inconnue")
+            if quote.created_by.lower() != user.email.lower() and not user.a_permission("voir_toutes_offres"):
+                raise HTTPException(403, "Pas autorisé")
+            quote_store.delete_quote_line(line_id)
+            # Recalculer totaux
+            svc = QuoteService(get_store(), quote_store)
+            svc._recalculer_totaux_quote(quote_id)
+            from fastapi import Response
+            return Response(status_code=204)
+
+        @router.post("/quotes/{quote_id}/submit", response_model=Quote)
+        def submit_quote(
+            quote_id: UUID,
+            svc: QuoteService = Depends(_service),
+            user = Depends(get_current_user),
+        ):
+            try:
+                return svc.soumettre(quote_id, user.email)
+            except ValueError as e:
+                raise HTTPException(409, str(e))
+
+        @router.post("/quotes/{quote_id}/decision", response_model=Quote)
+        def decision_quote(
+            quote_id: UUID,
+            body: DecisionQuoteRequest,
+            svc: QuoteService = Depends(_service),
+            user = Depends(get_current_user),
+        ):
+            if not user.a_permission("decider_derogation"):
+                raise HTTPException(403, "Permission `decider_derogation` requise")
+            try:
+                return svc.decider(quote_id, user.email, body.approved, body.comment)
+            except ValueError as e:
+                raise HTTPException(409, str(e))
+
+        @router.delete("/quotes/{quote_id}", status_code=204)
+        def delete_quote(
+            quote_id: UUID,
+            quote_store: QuoteStore = Depends(get_quote_store),
+            user = Depends(get_current_user),
+        ):
+            quote = quote_store.get_quote(quote_id)
+            if quote is None:
+                raise HTTPException(404, "Quote inconnue")
+            if quote.created_by.lower() != user.email.lower() and not user.a_permission("gerer_utilisateurs"):
+                raise HTTPException(403, "Pas autorisé à supprimer cette quote")
+            quote_store.delete_quote(quote_id)
+            from fastapi import Response
+            return Response(status_code=204)
 
     return router
