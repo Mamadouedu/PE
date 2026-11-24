@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, claude/**]
+  pull_request:
+    branches: [main]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    name: pytest (python-${{ matrix.python-version }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pricing
+          POSTGRES_PASSWORD: pricing
+          POSTGRES_DB: pricing_test
+        ports: ["5432:5432"]
+        # L'image Postgres a son propre healthcheck : on l'attend, sinon
+        # les premiers tests tombent en Connection refused.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: "postgresql+psycopg://pricing:pricing@localhost/pricing_test"
+      REDIS_URL: "redis://localhost:6379/0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Vérifier les migrations Alembic au seed
+        run: alembic upgrade head
+        env:
+          DATABASE_URL: "postgresql+psycopg://pricing:pricing@localhost/pricing_test"
+
+      - name: Lancer la suite de tests
+        run: pytest -q -rs --maxfail=5

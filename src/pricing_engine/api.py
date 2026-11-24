@@ -106,8 +106,16 @@ app.add_middleware(
     # headers de pagination (X-Total-Count...) : les navigateurs n'exposent
     # par défaut qu'une courte liste d'en-têtes de réponse aux requêtes
     # cross-origin, aucun de ceux-ci n'en fait partie.
-    expose_headers=["Content-Disposition", "X-Total-Count", "X-Limit", "X-Offset"],
+    expose_headers=["Content-Disposition", "X-Total-Count", "X-Limit", "X-Offset",
+                    "X-Request-ID"],
 )
+
+# Observabilité : logs JSON + request_id. En dev on garde le format
+# humain par défaut ; LOG_FORMAT=json active le JSON (prod).
+from .observability import RequestLoggingMiddleware, configure_json_logging
+if os.environ.get("LOG_FORMAT", "").lower() == "json":
+    configure_json_logging(os.environ.get("LOG_LEVEL", "INFO"))
+app.add_middleware(RequestLoggingMiddleware)
 
 
 @app.middleware("http")

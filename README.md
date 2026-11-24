@@ -120,6 +120,41 @@ Les deux détectent `TEST_DATABASE_URL` (défaut
 joignable, ils sont ignorés automatiquement. Tous les autres tournent en
 SQLite in-memory, sans base.
 
+## CI (GitHub Actions)
+
+`.github/workflows/ci.yml` lance la suite sur chaque push et PR vers
+`main`, en matrix Python 3.11/3.12/3.13 avec services PostgreSQL 16 et
+Redis 7. Les variables `TEST_DATABASE_URL` et `REDIS_URL` sont fournies
+par les services, donc tous les tests tournent (aucun skip en CI).
+
+## Observabilité (logs JSON + request_id)
+
+En prod, exporter `LOG_FORMAT=json` pour que chaque ligne de log soit
+un JSON avec timestamp, niveau, logger, message, et un `request_id`
+par requête HTTP (UUID généré sinon repris du header `X-Request-ID` du
+client — propagation de trace amont/aval possible).
+
+```bash
+export LOG_FORMAT=json
+export LOG_LEVEL=INFO   # DEBUG passe aussi les probes /healthz /readyz
+```
+
+Le middleware `RequestLoggingMiddleware` logue chaque requête avec
+`method`, `path`, `status_code`, `duration_ms`, `client_ip`. Les
+réponses exposent `X-Request-ID` que le frontend ou un reverse-proxy
+peut capturer pour faire remonter un ticket utilisateur. Les probes
+`/healthz` et `/readyz` sont loguées en DEBUG pour ne pas polluer la
+timeline.
+
+## Health checks (K8s / load-balancer)
+
+- `GET /healthz` — liveness. Toujours 200 si le process répond.
+  Volontairement sans checks externes : une panne Redis ne doit pas
+  faire redémarrer en boucle.
+- `GET /readyz` — readiness. Sonde DB + Redis quand configurés, 503
+  si une dépendance tombe. Le LB sort cette instance du pool sans
+  restart. JSON structuré avec `latency_ms` par check.
+
 ## Sessions multi-instance (Redis)
 
 Par défaut les sessions utilisateurs sont en mémoire : OK pour un seul
