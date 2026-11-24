@@ -134,10 +134,13 @@ class MoteurPrixV2:
                 version_id=hm_version.price_book_version_id,
                 variant_id=variant.technical_variant_id,
             )
+            # Charge les opérations une fois pour résoudre les codes des HM
+            # sans N+1 selon le store (SQL = 1 requête, in-memory = dict lookup)
+            ops_par_id = {o.operation_id: o for o in self._store.list_maintenance_operations()}
             for hr in hm_rates:
                 provision = hr.monthly_provision_amount or 0
                 hm_mensuel += provision
-                op = self._store._maintenance_operations.get(hr.operation_id)  # type: ignore[attr-defined]
+                op = ops_par_id.get(hr.operation_id)
                 detail_hm.append({
                     "operation_code": op.operation_code if op else str(hr.operation_id),
                     "selling_price_per_operation": hr.selling_price,

@@ -688,6 +688,1071 @@ class SqlAlchemyCatalogStore:
                 for r in rows
             ]
 
+    # =========================================================================
+    # Lot 2 — Usage & Maintenance
+    # =========================================================================
+
+    def _ensure_lot2(self):
+        """Compat API in-memory : SQL n'a pas d'init paresseuse à faire."""
+        pass
+
+    # --- UsageProfile ---
+
+    def upsert_usage_profile(self, u: UsageProfile) -> UsageProfile:
+        with self._sf() as session:
+            existing = session.execute(
+                select(UsageProfileRow).where(UsageProfileRow.usage_profile_code == u.usage_profile_code.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                usage_profile_name=u.usage_profile_name,
+                annual_mileage_min_km=u.annual_mileage_min_km,
+                annual_mileage_max_km=u.annual_mileage_max_km,
+                annual_engine_hours_min=u.annual_engine_hours_min,
+                annual_engine_hours_max=u.annual_engine_hours_max,
+                monthly_mileage_min_km=u.monthly_mileage_min_km,
+                monthly_mileage_max_km=u.monthly_mileage_max_km,
+                utilisation_type=u.utilisation_type.value,
+                description=u.description,
+                is_active=u.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+                session.commit()
+                return self._row_to_usage_profile(existing)
+            session.add(UsageProfileRow(
+                usage_profile_id=_s(u.usage_profile_id),
+                usage_profile_code=u.usage_profile_code.upper(),
+                **attrs,
+            ))
+            session.commit()
+            return u
+
+    def get_usage_profile(self, uid: UUID) -> UsageProfile | None:
+        with self._sf() as session:
+            row = session.get(UsageProfileRow, _s(uid))
+            return self._row_to_usage_profile(row) if row else None
+
+    def get_usage_profile_by_code(self, code: str) -> UsageProfile | None:
+        with self._sf() as session:
+            row = session.execute(
+                select(UsageProfileRow).where(UsageProfileRow.usage_profile_code == code.upper())
+            ).scalar_one_or_none()
+            return self._row_to_usage_profile(row) if row else None
+
+    def list_usage_profiles(self) -> list[UsageProfile]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(UsageProfileRow).order_by(UsageProfileRow.annual_mileage_min_km.nulls_first())
+            ).scalars().all()
+            return [self._row_to_usage_profile(r) for r in rows]
+
+    @staticmethod
+    def _row_to_usage_profile(r: UsageProfileRow) -> UsageProfile:
+        return UsageProfile(
+            usage_profile_id=UUID(r.usage_profile_id),
+            usage_profile_code=r.usage_profile_code,
+            usage_profile_name=r.usage_profile_name,
+            annual_mileage_min_km=r.annual_mileage_min_km,
+            annual_mileage_max_km=r.annual_mileage_max_km,
+            annual_engine_hours_min=r.annual_engine_hours_min,
+            annual_engine_hours_max=r.annual_engine_hours_max,
+            monthly_mileage_min_km=r.monthly_mileage_min_km,
+            monthly_mileage_max_km=r.monthly_mileage_max_km,
+            utilisation_type=UtilisationType(r.utilisation_type),
+            description=r.description,
+            is_active=r.is_active,
+        )
+
+    # --- MileageBand ---
+
+    def upsert_mileage_band(self, b: MileageBand) -> MileageBand:
+        with self._sf() as session:
+            existing = session.execute(
+                select(MileageBandRow).where(MileageBandRow.band_code == b.band_code.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                band_name=b.band_name,
+                min_annual_mileage_km=b.min_annual_mileage_km,
+                max_annual_mileage_km=b.max_annual_mileage_km,
+                calculation_method=b.calculation_method.value,
+                is_active=b.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+                session.commit()
+                return self._row_to_mileage_band(existing)
+            session.add(MileageBandRow(
+                mileage_band_id=_s(b.mileage_band_id),
+                band_code=b.band_code.upper(),
+                **attrs,
+            ))
+            session.commit()
+            return b
+
+    def list_mileage_bands(self) -> list[MileageBand]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(MileageBandRow).order_by(MileageBandRow.min_annual_mileage_km)
+            ).scalars().all()
+            return [self._row_to_mileage_band(r) for r in rows]
+
+    def get_mileage_band_for_annual_km(self, annual_km: int) -> MileageBand | None:
+        """Résolution : SQL côté serveur plutôt que full-scan Python."""
+        with self._sf() as session:
+            from sqlalchemy import or_, and_
+            rows = session.execute(
+                select(MileageBandRow).where(and_(
+                    MileageBandRow.min_annual_mileage_km <= annual_km,
+                    or_(
+                        MileageBandRow.max_annual_mileage_km.is_(None),
+                        MileageBandRow.max_annual_mileage_km > annual_km,
+                    ),
+                )).order_by(MileageBandRow.min_annual_mileage_km.desc())
+            ).scalars().first()
+            return self._row_to_mileage_band(rows) if rows else None
+
+    @staticmethod
+    def _row_to_mileage_band(r: MileageBandRow) -> MileageBand:
+        return MileageBand(
+            mileage_band_id=UUID(r.mileage_band_id),
+            band_code=r.band_code,
+            band_name=r.band_name,
+            min_annual_mileage_km=r.min_annual_mileage_km,
+            max_annual_mileage_km=r.max_annual_mileage_km,
+            calculation_method=CalculationMethod(r.calculation_method),
+            is_active=r.is_active,
+        )
+
+    # --- EngineHoursBand ---
+
+    def upsert_engine_hours_band(self, b: EngineHoursBand) -> EngineHoursBand:
+        with self._sf() as session:
+            existing = session.execute(
+                select(EngineHoursBandRow).where(EngineHoursBandRow.band_code == b.band_code.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                band_name=b.band_name,
+                min_annual_engine_hours=b.min_annual_engine_hours,
+                max_annual_engine_hours=b.max_annual_engine_hours,
+                is_active=b.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+                session.commit()
+                return EngineHoursBand(
+                    engine_hours_band_id=UUID(existing.engine_hours_band_id),
+                    band_code=existing.band_code, **attrs,
+                )
+            session.add(EngineHoursBandRow(
+                engine_hours_band_id=_s(b.engine_hours_band_id),
+                band_code=b.band_code.upper(),
+                **attrs,
+            ))
+            session.commit()
+            return b
+
+    def list_engine_hours_bands(self) -> list[EngineHoursBand]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(EngineHoursBandRow).order_by(EngineHoursBandRow.min_annual_engine_hours)
+            ).scalars().all()
+            return [
+                EngineHoursBand(
+                    engine_hours_band_id=UUID(r.engine_hours_band_id),
+                    band_code=r.band_code, band_name=r.band_name,
+                    min_annual_engine_hours=r.min_annual_engine_hours,
+                    max_annual_engine_hours=r.max_annual_engine_hours,
+                    is_active=r.is_active,
+                )
+                for r in rows
+            ]
+
+    # --- MaintenanceOperation ---
+
+    def upsert_maintenance_operation(self, o: MaintenanceOperation) -> MaintenanceOperation:
+        with self._sf() as session:
+            existing = session.execute(
+                select(MaintenanceOperationRow).where(MaintenanceOperationRow.operation_code == o.operation_code.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                operation_name=o.operation_name,
+                operation_type=o.operation_type.value,
+                trigger_type=o.trigger_type.value,
+                interval_mileage_km=o.interval_mileage_km,
+                interval_engine_hours=o.interval_engine_hours,
+                interval_months=o.interval_months,
+                standard_duration_hours=o.standard_duration_hours,
+                description=o.description,
+                is_active=o.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+                session.commit()
+                return self._row_to_operation(existing)
+            session.add(MaintenanceOperationRow(
+                operation_id=_s(o.operation_id),
+                operation_code=o.operation_code.upper(),
+                **attrs,
+            ))
+            session.commit()
+            return o
+
+    def list_maintenance_operations(self) -> list[MaintenanceOperation]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(MaintenanceOperationRow).order_by(MaintenanceOperationRow.operation_code)
+            ).scalars().all()
+            return [self._row_to_operation(r) for r in rows]
+
+    @staticmethod
+    def _row_to_operation(r: MaintenanceOperationRow) -> MaintenanceOperation:
+        return MaintenanceOperation(
+            operation_id=UUID(r.operation_id),
+            operation_code=r.operation_code,
+            operation_name=r.operation_name,
+            operation_type=OperationType(r.operation_type),
+            trigger_type=TriggerType(r.trigger_type),
+            interval_mileage_km=r.interval_mileage_km,
+            interval_engine_hours=r.interval_engine_hours,
+            interval_months=r.interval_months,
+            standard_duration_hours=r.standard_duration_hours,
+            description=r.description,
+            is_active=r.is_active,
+        )
+
+    # --- MaintenancePlan ---
+
+    def upsert_maintenance_plan(self, p: MaintenancePlan) -> MaintenancePlan:
+        with self._sf() as session:
+            existing = session.execute(
+                select(MaintenancePlanRow).where(MaintenancePlanRow.plan_code == p.plan_code.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                plan_name=p.plan_name,
+                manufacturer_id=_s(p.manufacturer_id) if p.manufacturer_id else None,
+                description=p.description,
+                valid_from=p.valid_from,
+                valid_to=p.valid_to,
+                is_active=p.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+                session.commit()
+                return self._row_to_plan(existing)
+            session.add(MaintenancePlanRow(
+                maintenance_plan_id=_s(p.maintenance_plan_id),
+                plan_code=p.plan_code.upper(),
+                **attrs,
+            ))
+            session.commit()
+            return p
+
+    def list_maintenance_plans(self) -> list[MaintenancePlan]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(MaintenancePlanRow).order_by(MaintenancePlanRow.plan_code)
+            ).scalars().all()
+            return [self._row_to_plan(r) for r in rows]
+
+    @staticmethod
+    def _row_to_plan(r: MaintenancePlanRow) -> MaintenancePlan:
+        return MaintenancePlan(
+            maintenance_plan_id=UUID(r.maintenance_plan_id),
+            plan_code=r.plan_code, plan_name=r.plan_name,
+            manufacturer_id=UUID(r.manufacturer_id) if r.manufacturer_id else None,
+            description=r.description, valid_from=r.valid_from, valid_to=r.valid_to,
+            is_active=r.is_active,
+        )
+
+    def add_plan_operation(self, link: MaintenancePlanOperation) -> MaintenancePlanOperation:
+        with self._sf() as session:
+            if session.get(MaintenancePlanRow, _s(link.maintenance_plan_id)) is None:
+                raise ValueError(f"MaintenancePlan {link.maintenance_plan_id} inconnu")
+            if session.get(MaintenanceOperationRow, _s(link.operation_id)) is None:
+                raise ValueError(f"MaintenanceOperation {link.operation_id} inconnue")
+            existing = session.get(
+                MaintenancePlanOperationRow, (_s(link.maintenance_plan_id), _s(link.operation_id))
+            )
+            if existing:
+                existing.sequence_order = link.sequence_order
+                existing.is_optional = link.is_optional
+                existing.frequency_multiplier = link.frequency_multiplier
+            else:
+                session.add(MaintenancePlanOperationRow(
+                    maintenance_plan_id=_s(link.maintenance_plan_id),
+                    operation_id=_s(link.operation_id),
+                    sequence_order=link.sequence_order,
+                    is_optional=link.is_optional,
+                    frequency_multiplier=link.frequency_multiplier,
+                ))
+            session.commit()
+            return link
+
+    def list_operations_for_plan(self, plan_id: UUID) -> list[MaintenanceOperation]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(MaintenanceOperationRow).join(
+                    MaintenancePlanOperationRow,
+                    MaintenancePlanOperationRow.operation_id == MaintenanceOperationRow.operation_id,
+                ).where(MaintenancePlanOperationRow.maintenance_plan_id == _s(plan_id))
+                .order_by(MaintenancePlanOperationRow.sequence_order)
+            ).scalars().all()
+            return [self._row_to_operation(r) for r in rows]
+
+    # --- ECM Providers ---
+
+    def upsert_ecm_provider(self, e: EcmProvider) -> EcmProvider:
+        with self._sf() as session:
+            existing = session.execute(
+                select(EcmProviderRow).where(EcmProviderRow.provider_code == e.provider_code.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                provider_name=e.provider_name,
+                certification_number=e.certification_number,
+                certification_valid_from=e.certification_valid_from,
+                certification_valid_to=e.certification_valid_to,
+                description=e.description,
+                is_active=e.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+                session.commit()
+                return self._row_to_ecm(existing)
+            session.add(EcmProviderRow(
+                ecm_provider_id=_s(e.ecm_provider_id),
+                provider_code=e.provider_code.upper(),
+                **attrs,
+            ))
+            session.commit()
+            return e
+
+    def list_ecm_providers(self) -> list[EcmProvider]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(EcmProviderRow).order_by(EcmProviderRow.provider_code)
+            ).scalars().all()
+            return [self._row_to_ecm(r) for r in rows]
+
+    @staticmethod
+    def _row_to_ecm(r: EcmProviderRow) -> EcmProvider:
+        return EcmProvider(
+            ecm_provider_id=UUID(r.ecm_provider_id),
+            provider_code=r.provider_code, provider_name=r.provider_name,
+            certification_number=r.certification_number,
+            certification_valid_from=r.certification_valid_from,
+            certification_valid_to=r.certification_valid_to,
+            description=r.description, is_active=r.is_active,
+        )
+
+    # --- Service Levels ---
+
+    def upsert_service_level(self, s: ServiceLevel) -> ServiceLevel:
+        with self._sf() as session:
+            existing = session.execute(
+                select(ServiceLevelRow).where(ServiceLevelRow.service_level_code == s.service_level_code.value.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                service_level_name=s.service_level_name,
+                hotline_included=s.hotline_included,
+                hotline_coverage=s.hotline_coverage,
+                response_time_hours=s.response_time_hours,
+                description=s.description,
+                is_active=s.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+                session.commit()
+                return self._row_to_sl(existing)
+            session.add(ServiceLevelRow(
+                service_level_id=_s(s.service_level_id),
+                service_level_code=s.service_level_code.value.upper(),
+                **attrs,
+            ))
+            session.commit()
+            return s
+
+    def list_service_levels(self) -> list[ServiceLevel]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(ServiceLevelRow).order_by(ServiceLevelRow.service_level_code)
+            ).scalars().all()
+            return [self._row_to_sl(r) for r in rows]
+
+    @staticmethod
+    def _row_to_sl(r: ServiceLevelRow) -> ServiceLevel:
+        return ServiceLevel(
+            service_level_id=UUID(r.service_level_id),
+            service_level_code=ServiceLevelCode(r.service_level_code),
+            service_level_name=r.service_level_name,
+            hotline_included=r.hotline_included,
+            hotline_coverage=r.hotline_coverage,
+            response_time_hours=r.response_time_hours,
+            description=r.description, is_active=r.is_active,
+        )
+
+    # --- Associations variantes ↔ (usage, mileage, maintenance) ---
+
+    def set_variant_usage_profile(self, link: VariantUsageProfile) -> VariantUsageProfile:
+        with self._sf() as session:
+            existing = session.get(VariantUsageProfileRow, (_s(link.technical_variant_id), _s(link.usage_profile_id)))
+            attrs = dict(
+                is_supported=link.is_supported,
+                warning_threshold_km=link.warning_threshold_km,
+                maximum_contractual_mileage_km=link.maximum_contractual_mileage_km,
+                requires_specific_approval=link.requires_specific_approval,
+                valid_from=link.valid_from, valid_to=link.valid_to,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+            else:
+                session.add(VariantUsageProfileRow(
+                    technical_variant_id=_s(link.technical_variant_id),
+                    usage_profile_id=_s(link.usage_profile_id),
+                    **attrs,
+                ))
+            session.commit()
+            return link
+
+    def list_usage_profiles_for_variant(self, variant_id: UUID) -> list[tuple[UsageProfile, VariantUsageProfile]]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(UsageProfileRow, VariantUsageProfileRow).join(
+                    VariantUsageProfileRow,
+                    VariantUsageProfileRow.usage_profile_id == UsageProfileRow.usage_profile_id,
+                ).where(VariantUsageProfileRow.technical_variant_id == _s(variant_id))
+            ).all()
+            return [
+                (
+                    self._row_to_usage_profile(up),
+                    VariantUsageProfile(
+                        technical_variant_id=UUID(link.technical_variant_id),
+                        usage_profile_id=UUID(link.usage_profile_id),
+                        is_supported=link.is_supported,
+                        warning_threshold_km=link.warning_threshold_km,
+                        maximum_contractual_mileage_km=link.maximum_contractual_mileage_km,
+                        requires_specific_approval=link.requires_specific_approval,
+                        valid_from=link.valid_from, valid_to=link.valid_to,
+                    ),
+                )
+                for up, link in rows
+            ]
+
+    def set_variant_mileage_band(self, link: VariantMileageBand) -> VariantMileageBand:
+        with self._sf() as session:
+            existing = session.get(VariantMileageBandRow, (_s(link.technical_variant_id), _s(link.mileage_band_id)))
+            if existing:
+                existing.is_supported = link.is_supported
+                existing.valid_from = link.valid_from
+                existing.valid_to = link.valid_to
+            else:
+                session.add(VariantMileageBandRow(
+                    technical_variant_id=_s(link.technical_variant_id),
+                    mileage_band_id=_s(link.mileage_band_id),
+                    is_supported=link.is_supported,
+                    valid_from=link.valid_from, valid_to=link.valid_to,
+                ))
+            session.commit()
+            return link
+
+    def list_mileage_bands_for_variant(self, variant_id: UUID) -> list[MileageBand]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(MileageBandRow).join(
+                    VariantMileageBandRow,
+                    VariantMileageBandRow.mileage_band_id == MileageBandRow.mileage_band_id,
+                ).where(VariantMileageBandRow.technical_variant_id == _s(variant_id))
+            ).scalars().all()
+            return [self._row_to_mileage_band(r) for r in rows]
+
+    def set_variant_maintenance_plan(self, link: VariantMaintenancePlan) -> VariantMaintenancePlan:
+        with self._sf() as session:
+            existing = session.get(VariantMaintenancePlanRow, (_s(link.technical_variant_id), _s(link.maintenance_plan_id)))
+            if existing:
+                existing.is_default = link.is_default
+                existing.valid_from = link.valid_from
+                existing.valid_to = link.valid_to
+            else:
+                session.add(VariantMaintenancePlanRow(
+                    technical_variant_id=_s(link.technical_variant_id),
+                    maintenance_plan_id=_s(link.maintenance_plan_id),
+                    is_default=link.is_default,
+                    valid_from=link.valid_from, valid_to=link.valid_to,
+                ))
+            session.commit()
+            return link
+
+    def list_maintenance_plans_for_variant(self, variant_id: UUID) -> list[MaintenancePlan]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(MaintenancePlanRow).join(
+                    VariantMaintenancePlanRow,
+                    VariantMaintenancePlanRow.maintenance_plan_id == MaintenancePlanRow.maintenance_plan_id,
+                ).where(VariantMaintenancePlanRow.technical_variant_id == _s(variant_id))
+            ).scalars().all()
+            return [self._row_to_plan(r) for r in rows]
+
+    # =========================================================================
+    # Lot 3 — Tarifs versionnés
+    # =========================================================================
+
+    def _ensure_lot3(self):
+        pass
+
+    # --- Dimensions ---
+
+    def upsert_lease_band(self, b: LeaseBand) -> LeaseBand:
+        with self._sf() as session:
+            existing = session.execute(
+                select(LeaseBandRow).where(LeaseBandRow.band_code == b.band_code.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                band_name=b.band_name,
+                min_duration_months=b.min_duration_months,
+                max_duration_months=b.max_duration_months,
+                is_active=b.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+            else:
+                session.add(LeaseBandRow(
+                    lease_band_id=_s(b.lease_band_id),
+                    band_code=b.band_code.upper(),
+                    **attrs,
+                ))
+            session.commit()
+            return b
+
+    def list_lease_bands(self) -> list[LeaseBand]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(LeaseBandRow).order_by(LeaseBandRow.min_duration_months)
+            ).scalars().all()
+            return [
+                LeaseBand(
+                    lease_band_id=UUID(r.lease_band_id),
+                    band_code=r.band_code, band_name=r.band_name,
+                    min_duration_months=r.min_duration_months,
+                    max_duration_months=r.max_duration_months,
+                    is_active=r.is_active,
+                )
+                for r in rows
+            ]
+
+    def get_lease_band_for_duration(self, months: int) -> LeaseBand | None:
+        with self._sf() as session:
+            from sqlalchemy import or_, and_
+            row = session.execute(
+                select(LeaseBandRow).where(and_(
+                    LeaseBandRow.min_duration_months <= months,
+                    or_(
+                        LeaseBandRow.max_duration_months.is_(None),
+                        LeaseBandRow.max_duration_months >= months,
+                    ),
+                )).order_by(LeaseBandRow.min_duration_months.desc())
+            ).scalars().first()
+            return LeaseBand(
+                lease_band_id=UUID(row.lease_band_id),
+                band_code=row.band_code, band_name=row.band_name,
+                min_duration_months=row.min_duration_months,
+                max_duration_months=row.max_duration_months,
+                is_active=row.is_active,
+            ) if row else None
+
+    def upsert_asset_age_band(self, b: AssetAgeBand) -> AssetAgeBand:
+        with self._sf() as session:
+            existing = session.execute(
+                select(AssetAgeBandRow).where(AssetAgeBandRow.band_code == b.band_code.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                band_name=b.band_name,
+                min_age_years=b.min_age_years,
+                max_age_years=b.max_age_years,
+                is_active=b.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+            else:
+                session.add(AssetAgeBandRow(
+                    asset_age_band_id=_s(b.asset_age_band_id),
+                    band_code=b.band_code.upper(),
+                    **attrs,
+                ))
+            session.commit()
+            return b
+
+    def list_asset_age_bands(self) -> list[AssetAgeBand]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(AssetAgeBandRow).order_by(AssetAgeBandRow.min_age_years)
+            ).scalars().all()
+            return [
+                AssetAgeBand(
+                    asset_age_band_id=UUID(r.asset_age_band_id),
+                    band_code=r.band_code, band_name=r.band_name,
+                    min_age_years=r.min_age_years,
+                    max_age_years=r.max_age_years,
+                    is_active=r.is_active,
+                )
+                for r in rows
+            ]
+
+    def get_asset_age_band_for_age(self, age_years: float) -> AssetAgeBand | None:
+        with self._sf() as session:
+            from sqlalchemy import or_, and_
+            row = session.execute(
+                select(AssetAgeBandRow).where(and_(
+                    AssetAgeBandRow.min_age_years <= age_years,
+                    or_(
+                        AssetAgeBandRow.max_age_years.is_(None),
+                        AssetAgeBandRow.max_age_years > age_years,
+                    ),
+                )).order_by(AssetAgeBandRow.min_age_years.desc())
+            ).scalars().first()
+            return AssetAgeBand(
+                asset_age_band_id=UUID(row.asset_age_band_id),
+                band_code=row.band_code, band_name=row.band_name,
+                min_age_years=row.min_age_years,
+                max_age_years=row.max_age_years,
+                is_active=row.is_active,
+            ) if row else None
+
+    def upsert_country_group(self, g: CountryGroup) -> CountryGroup:
+        with self._sf() as session:
+            existing = session.execute(
+                select(CountryGroupRow).where(CountryGroupRow.group_code == g.group_code.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                group_name=g.group_name,
+                country_iso_codes=list(g.country_iso_codes),
+                description=g.description,
+                is_active=g.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+            else:
+                session.add(CountryGroupRow(
+                    country_group_id=_s(g.country_group_id),
+                    group_code=g.group_code.upper(),
+                    **attrs,
+                ))
+            session.commit()
+            return g
+
+    def list_country_groups(self) -> list[CountryGroup]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(CountryGroupRow).order_by(CountryGroupRow.group_code)
+            ).scalars().all()
+            return [
+                CountryGroup(
+                    country_group_id=UUID(r.country_group_id),
+                    group_code=r.group_code, group_name=r.group_name,
+                    country_iso_codes=list(r.country_iso_codes or []),
+                    description=r.description, is_active=r.is_active,
+                )
+                for r in rows
+            ]
+
+    def get_country_group_for_iso(self, iso: str) -> CountryGroup | None:
+        iso_u = iso.upper()
+        for g in self.list_country_groups():
+            if g.contient_pays(iso_u):
+                return g
+        return None
+
+    def upsert_commercial_option(self, c: CommercialOption) -> CommercialOption:
+        with self._sf() as session:
+            existing = session.execute(
+                select(CommercialOptionRow).where(CommercialOptionRow.option_code == c.option_code.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                option_name=c.option_name,
+                option_type=c.option_type,
+                default_billing_unit=c.default_billing_unit.value,
+                description=c.description,
+                is_active=c.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+            else:
+                session.add(CommercialOptionRow(
+                    commercial_option_id=_s(c.commercial_option_id),
+                    option_code=c.option_code.upper(),
+                    **attrs,
+                ))
+            session.commit()
+            return c
+
+    def list_commercial_options(self) -> list[CommercialOption]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(CommercialOptionRow).order_by(CommercialOptionRow.option_code)
+            ).scalars().all()
+            return [
+                CommercialOption(
+                    commercial_option_id=UUID(r.commercial_option_id),
+                    option_code=r.option_code, option_name=r.option_name,
+                    option_type=r.option_type,
+                    default_billing_unit=BillingUnit(r.default_billing_unit),
+                    description=r.description, is_active=r.is_active,
+                )
+                for r in rows
+            ]
+
+    # --- PriceBooks + Versions ---
+
+    def upsert_price_book(self, pb: PriceBook) -> PriceBook:
+        with self._sf() as session:
+            existing = session.execute(
+                select(PriceBookRow).where(PriceBookRow.price_book_code == pb.price_book_code.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                price_book_name=pb.price_book_name,
+                price_type=pb.price_type.value,
+                currency_iso=pb.currency_iso,
+                description=pb.description,
+                is_active=pb.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+            else:
+                session.add(PriceBookRow(
+                    price_book_id=_s(pb.price_book_id),
+                    price_book_code=pb.price_book_code.upper(),
+                    **attrs,
+                ))
+            session.commit()
+            return pb
+
+    def list_price_books(self) -> list[PriceBook]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(PriceBookRow).order_by(PriceBookRow.price_book_code)
+            ).scalars().all()
+            return [
+                PriceBook(
+                    price_book_id=UUID(r.price_book_id),
+                    price_book_code=r.price_book_code,
+                    price_book_name=r.price_book_name,
+                    price_type=PriceType(r.price_type),
+                    currency_iso=r.currency_iso,
+                    description=r.description, is_active=r.is_active,
+                )
+                for r in rows
+            ]
+
+    def get_price_book_by_code(self, code: str) -> PriceBook | None:
+        with self._sf() as session:
+            row = session.execute(
+                select(PriceBookRow).where(PriceBookRow.price_book_code == code.upper())
+            ).scalar_one_or_none()
+            if row is None: return None
+            return PriceBook(
+                price_book_id=UUID(row.price_book_id),
+                price_book_code=row.price_book_code,
+                price_book_name=row.price_book_name,
+                price_type=PriceType(row.price_type),
+                currency_iso=row.currency_iso,
+                description=row.description, is_active=row.is_active,
+            )
+
+    def upsert_price_book_version(self, v: PriceBookVersion) -> PriceBookVersion:
+        with self._sf() as session:
+            if session.get(PriceBookRow, _s(v.price_book_id)) is None:
+                raise ValueError(f"PriceBook {v.price_book_id} inconnu")
+            existing = session.get(PriceBookVersionRow, _s(v.price_book_version_id))
+            attrs = dict(
+                price_book_id=_s(v.price_book_id),
+                year=v.year, version_number=v.version_number,
+                status=v.status.value,
+                valid_from=v.valid_from, valid_to=v.valid_to,
+                currency_iso=v.currency_iso,
+                approved_by=v.approved_by, approved_at=v.approved_at,
+                published_at=v.published_at, description=v.description,
+            )
+            if existing:
+                for k, val in attrs.items(): setattr(existing, k, val)
+            else:
+                session.add(PriceBookVersionRow(
+                    price_book_version_id=_s(v.price_book_version_id),
+                    **attrs,
+                ))
+            session.commit()
+            return v
+
+    def list_price_book_versions(self, *, price_book_id: UUID | None = None) -> list[PriceBookVersion]:
+        with self._sf() as session:
+            stmt = select(PriceBookVersionRow)
+            if price_book_id is not None:
+                stmt = stmt.where(PriceBookVersionRow.price_book_id == _s(price_book_id))
+            rows = session.execute(
+                stmt.order_by(PriceBookVersionRow.year.desc(), PriceBookVersionRow.version_number.desc())
+            ).scalars().all()
+            return [self._row_to_pbv(r) for r in rows]
+
+    def get_current_published_version(self, price_book_code: str, at_date=None) -> PriceBookVersion | None:
+        """Résolution SQL : prend la version publiée la plus récente qui
+        couvre la date demandée."""
+        from datetime import date as date_cls
+        from sqlalchemy import or_, and_
+        if at_date is None:
+            at_date = date_cls.today()
+        with self._sf() as session:
+            pb = session.execute(
+                select(PriceBookRow).where(PriceBookRow.price_book_code == price_book_code.upper())
+            ).scalar_one_or_none()
+            if pb is None: return None
+            row = session.execute(
+                select(PriceBookVersionRow).where(and_(
+                    PriceBookVersionRow.price_book_id == pb.price_book_id,
+                    PriceBookVersionRow.status == "published",
+                    PriceBookVersionRow.valid_from <= at_date,
+                    or_(
+                        PriceBookVersionRow.valid_to.is_(None),
+                        PriceBookVersionRow.valid_to >= at_date,
+                    ),
+                )).order_by(
+                    PriceBookVersionRow.year.desc(),
+                    PriceBookVersionRow.version_number.desc(),
+                )
+            ).scalars().first()
+            return self._row_to_pbv(row) if row else None
+
+    @staticmethod
+    def _row_to_pbv(r: PriceBookVersionRow) -> PriceBookVersion:
+        return PriceBookVersion(
+            price_book_version_id=UUID(r.price_book_version_id),
+            price_book_id=UUID(r.price_book_id),
+            year=r.year, version_number=r.version_number,
+            status=PriceBookStatus(r.status),
+            valid_from=r.valid_from, valid_to=r.valid_to,
+            currency_iso=r.currency_iso,
+            approved_by=r.approved_by, approved_at=r.approved_at,
+            published_at=r.published_at, description=r.description,
+        )
+
+    # --- Rates ---
+
+    def add_dry_lease_rate(self, r: DryLeaseRate) -> DryLeaseRate:
+        with self._sf() as session:
+            if session.get(PriceBookVersionRow, _s(r.price_book_version_id)) is None:
+                raise ValueError(f"PriceBookVersion {r.price_book_version_id} inconnue")
+            session.add(DryLeaseRateRow(
+                dry_lease_rate_id=_s(r.dry_lease_rate_id),
+                price_book_version_id=_s(r.price_book_version_id),
+                technical_variant_id=_s(r.technical_variant_id),
+                country_group_id=_s(r.country_group_id),
+                lease_band_id=_s(r.lease_band_id),
+                asset_age_band_id=_s(r.asset_age_band_id),
+                monthly_base_rent=r.monthly_base_rent,
+                insurance_amount=r.insurance_amount,
+                risk_provision_amount=r.risk_provision_amount,
+                specific_commitment_rate=r.specific_commitment_rate,
+                minimum_price=r.minimum_price,
+                currency_iso=r.currency_iso,
+                valid_from=r.valid_from, valid_to=r.valid_to,
+            ))
+            session.commit()
+            return r
+
+    def list_dry_lease_rates(self, *, version_id: UUID | None = None) -> list[DryLeaseRate]:
+        with self._sf() as session:
+            stmt = select(DryLeaseRateRow)
+            if version_id is not None:
+                stmt = stmt.where(DryLeaseRateRow.price_book_version_id == _s(version_id))
+            rows = session.execute(stmt).scalars().all()
+            return [self._row_to_dl(r) for r in rows]
+
+    def find_dry_lease_rate(self, version_id, variant_id, country_group_id,
+                            lease_band_id, asset_age_band_id) -> DryLeaseRate | None:
+        """Lookup unique via l'index composite ix_dl_lookup."""
+        with self._sf() as session:
+            from sqlalchemy import and_
+            row = session.execute(
+                select(DryLeaseRateRow).where(and_(
+                    DryLeaseRateRow.price_book_version_id == _s(version_id),
+                    DryLeaseRateRow.technical_variant_id == _s(variant_id),
+                    DryLeaseRateRow.country_group_id == _s(country_group_id),
+                    DryLeaseRateRow.lease_band_id == _s(lease_band_id),
+                    DryLeaseRateRow.asset_age_band_id == _s(asset_age_band_id),
+                ))
+            ).scalar_one_or_none()
+            return self._row_to_dl(row) if row else None
+
+    @staticmethod
+    def _row_to_dl(r: DryLeaseRateRow) -> DryLeaseRate:
+        return DryLeaseRate(
+            dry_lease_rate_id=UUID(r.dry_lease_rate_id),
+            price_book_version_id=UUID(r.price_book_version_id),
+            technical_variant_id=UUID(r.technical_variant_id),
+            country_group_id=UUID(r.country_group_id),
+            lease_band_id=UUID(r.lease_band_id),
+            asset_age_band_id=UUID(r.asset_age_band_id),
+            monthly_base_rent=r.monthly_base_rent,
+            insurance_amount=r.insurance_amount,
+            risk_provision_amount=r.risk_provision_amount,
+            specific_commitment_rate=r.specific_commitment_rate,
+            minimum_price=r.minimum_price,
+            currency_iso=r.currency_iso,
+            valid_from=r.valid_from, valid_to=r.valid_to,
+        )
+
+    def add_heavy_maintenance_rate(self, r: HeavyMaintenanceRate) -> HeavyMaintenanceRate:
+        with self._sf() as session:
+            if session.get(PriceBookVersionRow, _s(r.price_book_version_id)) is None:
+                raise ValueError(f"PriceBookVersion {r.price_book_version_id} inconnue")
+            session.add(HeavyMaintenanceRateRow(
+                heavy_maintenance_rate_id=_s(r.heavy_maintenance_rate_id),
+                price_book_version_id=_s(r.price_book_version_id),
+                technical_variant_id=_s(r.technical_variant_id),
+                operation_id=_s(r.operation_id),
+                country_group_id=_s(r.country_group_id) if r.country_group_id else None,
+                workshop_id=_s(r.workshop_id) if r.workshop_id else None,
+                calculation_method=r.calculation_method.value,
+                cost_amount=r.cost_amount,
+                selling_price=r.selling_price,
+                billing_unit=r.billing_unit.value,
+                monthly_provision_amount=r.monthly_provision_amount,
+                currency_iso=r.currency_iso,
+                valid_from=r.valid_from, valid_to=r.valid_to,
+            ))
+            session.commit()
+            return r
+
+    def list_heavy_maintenance_rates(self, *, version_id: UUID | None = None) -> list[HeavyMaintenanceRate]:
+        with self._sf() as session:
+            stmt = select(HeavyMaintenanceRateRow)
+            if version_id is not None:
+                stmt = stmt.where(HeavyMaintenanceRateRow.price_book_version_id == _s(version_id))
+            rows = session.execute(stmt).scalars().all()
+            return [self._row_to_hm(r) for r in rows]
+
+    def find_heavy_maintenance_rates(self, version_id, variant_id) -> list[HeavyMaintenanceRate]:
+        with self._sf() as session:
+            from sqlalchemy import and_
+            rows = session.execute(
+                select(HeavyMaintenanceRateRow).where(and_(
+                    HeavyMaintenanceRateRow.price_book_version_id == _s(version_id),
+                    HeavyMaintenanceRateRow.technical_variant_id == _s(variant_id),
+                ))
+            ).scalars().all()
+            return [self._row_to_hm(r) for r in rows]
+
+    @staticmethod
+    def _row_to_hm(r: HeavyMaintenanceRateRow) -> HeavyMaintenanceRate:
+        return HeavyMaintenanceRate(
+            heavy_maintenance_rate_id=UUID(r.heavy_maintenance_rate_id),
+            price_book_version_id=UUID(r.price_book_version_id),
+            technical_variant_id=UUID(r.technical_variant_id),
+            operation_id=UUID(r.operation_id),
+            country_group_id=UUID(r.country_group_id) if r.country_group_id else None,
+            workshop_id=UUID(r.workshop_id) if r.workshop_id else None,
+            calculation_method=CalculationMethodHM(r.calculation_method),
+            cost_amount=r.cost_amount,
+            selling_price=r.selling_price,
+            billing_unit=BillingUnit(r.billing_unit),
+            monthly_provision_amount=r.monthly_provision_amount,
+            currency_iso=r.currency_iso,
+            valid_from=r.valid_from, valid_to=r.valid_to,
+        )
+
+    def add_operating_maintenance_rate(self, r: OperatingMaintenanceRate) -> OperatingMaintenanceRate:
+        with self._sf() as session:
+            if session.get(PriceBookVersionRow, _s(r.price_book_version_id)) is None:
+                raise ValueError(f"PriceBookVersion {r.price_book_version_id} inconnue")
+            session.add(OperatingMaintenanceRateRow(
+                operating_maintenance_rate_id=_s(r.operating_maintenance_rate_id),
+                price_book_version_id=_s(r.price_book_version_id),
+                technical_variant_id=_s(r.technical_variant_id),
+                country_id=_s(r.country_id) if r.country_id else None,
+                mileage_band_id=_s(r.mileage_band_id),
+                engine_hours_band_id=_s(r.engine_hours_band_id) if r.engine_hours_band_id else None,
+                ecm_provider_id=_s(r.ecm_provider_id) if r.ecm_provider_id else None,
+                service_level_id=_s(r.service_level_id) if r.service_level_id else None,
+                monthly_fixed_amount=r.monthly_fixed_amount,
+                price_per_kilometer=r.price_per_kilometer,
+                price_per_engine_hour=r.price_per_engine_hour,
+                ecm_monthly_amount=r.ecm_monthly_amount,
+                last_mile_monthly_amount=r.last_mile_monthly_amount,
+                minimum_monthly_amount=r.minimum_monthly_amount,
+                maximum_annual_amount=r.maximum_annual_amount,
+                currency_iso=r.currency_iso,
+                valid_from=r.valid_from, valid_to=r.valid_to,
+            ))
+            session.commit()
+            return r
+
+    def list_operating_maintenance_rates(self, *, version_id: UUID | None = None) -> list[OperatingMaintenanceRate]:
+        with self._sf() as session:
+            stmt = select(OperatingMaintenanceRateRow)
+            if version_id is not None:
+                stmt = stmt.where(OperatingMaintenanceRateRow.price_book_version_id == _s(version_id))
+            rows = session.execute(stmt).scalars().all()
+            return [self._row_to_om(r) for r in rows]
+
+    def find_operating_maintenance_rate(self, version_id, variant_id, mileage_band_id,
+                                        country_id=None, ecm_provider_id=None,
+                                        service_level_id=None) -> OperatingMaintenanceRate | None:
+        """Résolution avec fallback + scoring. Pour simplicité, on prend
+        tous les candidats et on score côté Python (volume faible : qq
+        dizaines de rates par variante max)."""
+        with self._sf() as session:
+            from sqlalchemy import and_
+            rows = session.execute(
+                select(OperatingMaintenanceRateRow).where(and_(
+                    OperatingMaintenanceRateRow.price_book_version_id == _s(version_id),
+                    OperatingMaintenanceRateRow.technical_variant_id == _s(variant_id),
+                    OperatingMaintenanceRateRow.mileage_band_id == _s(mileage_band_id),
+                ))
+            ).scalars().all()
+            if not rows:
+                return None
+
+            def match_score(r) -> int:
+                score = 0
+                if country_id is not None:
+                    if r.country_id == _s(country_id): score += 4
+                    elif r.country_id is None: score += 1
+                    else: return -1
+                if ecm_provider_id is not None:
+                    if r.ecm_provider_id == _s(ecm_provider_id): score += 2
+                    elif r.ecm_provider_id is None: score += 1
+                    else: return -1
+                if service_level_id is not None:
+                    if r.service_level_id == _s(service_level_id): score += 1
+                    elif r.service_level_id is None: score += 1
+                    else: return -1
+                return score
+
+            scored = [(match_score(r), r) for r in rows]
+            scored = [(s, r) for s, r in scored if s >= 0]
+            if not scored:
+                return None
+            scored.sort(key=lambda x: x[0], reverse=True)
+            return self._row_to_om(scored[0][1])
+
+    @staticmethod
+    def _row_to_om(r: OperatingMaintenanceRateRow) -> OperatingMaintenanceRate:
+        return OperatingMaintenanceRate(
+            operating_maintenance_rate_id=UUID(r.operating_maintenance_rate_id),
+            price_book_version_id=UUID(r.price_book_version_id),
+            technical_variant_id=UUID(r.technical_variant_id),
+            country_id=UUID(r.country_id) if r.country_id else None,
+            mileage_band_id=UUID(r.mileage_band_id),
+            engine_hours_band_id=UUID(r.engine_hours_band_id) if r.engine_hours_band_id else None,
+            ecm_provider_id=UUID(r.ecm_provider_id) if r.ecm_provider_id else None,
+            service_level_id=UUID(r.service_level_id) if r.service_level_id else None,
+            monthly_fixed_amount=r.monthly_fixed_amount,
+            price_per_kilometer=r.price_per_kilometer,
+            price_per_engine_hour=r.price_per_engine_hour,
+            ecm_monthly_amount=r.ecm_monthly_amount,
+            last_mile_monthly_amount=r.last_mile_monthly_amount,
+            minimum_monthly_amount=r.minimum_monthly_amount,
+            maximum_annual_amount=r.maximum_annual_amount,
+            currency_iso=r.currency_iso,
+            valid_from=r.valid_from, valid_to=r.valid_to,
+        )
+
 
 def make_catalog_session_factory(database_url: str) -> sessionmaker[Session]:
     """Factory helper. Crée l'engine + la sessionmaker en une ligne."""

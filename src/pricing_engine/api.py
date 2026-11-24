@@ -243,15 +243,45 @@ def _seeder_utilisateurs_par_defaut() -> None:
 
 _seeder_utilisateurs_par_defaut()
 
-# ---------------- Catalogue PricingHub (Lot 1) ----------------
+# ---------------- Catalogue PricingHub (Lots 1→5) ----------------
 
-_catalog_store: CatalogStore = InMemoryCatalogStore()
-# Seed du catalogue au démarrage — pour que l'API soit utilisable
-# immédiatement en dev sans import CSV manuel.
-seed_catalog_akiem(_catalog_store)
-seed_lot2(_catalog_store)
-seed_lot3(_catalog_store)
-seed_lot5(_catalog_store)
+
+def _build_catalog_store() -> CatalogStore:
+    """Fabrique le store catalog.
+
+    Si `CATALOG_DATABASE_URL` est défini, utilise SqlAlchemyCatalogStore
+    (persistance réelle PostgreSQL ou SQLite). Sinon InMemoryCatalogStore
+    (perdu au redémarrage — OK en dev, à proscrire en prod).
+
+    Le seed n'est appliqué qu'au premier démarrage avec un store vide :
+    on détecte en comptant les constructeurs. Sur une base déjà peuplée
+    (prod, restart), on skippe le seed sans écraser."""
+    database_url = os.environ.get("CATALOG_DATABASE_URL")
+    if database_url:
+        from .catalog.sql_store import SqlAlchemyCatalogStore, make_catalog_session_factory
+        from .catalog.db import create_all_catalog_tables
+        from sqlalchemy import create_engine
+        engine = create_engine(database_url, future=True)
+        # En l'absence d'Alembic opérationnel au boot, on assure les tables
+        create_all_catalog_tables(engine)
+        sf = make_catalog_session_factory(database_url)
+        store: CatalogStore = SqlAlchemyCatalogStore(sf)
+    else:
+        store = InMemoryCatalogStore()
+
+    # Seed uniquement si vide — compatible redémarrage avec persistance
+    if not store.list_manufacturers():
+        seed_catalog_akiem(store)
+        seed_lot2(store)
+        seed_lot3(store)
+        # Lot 5 n'est pas encore SQL : skip si SQL store (évite AttributeError)
+        if isinstance(store, InMemoryCatalogStore):
+            seed_lot5(store)
+
+    return store
+
+
+_catalog_store: CatalogStore = _build_catalog_store()
 
 # Quote store Lot 4
 _quote_store: QuoteStore = InMemoryQuoteStore()
