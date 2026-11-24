@@ -274,17 +274,27 @@ def _build_catalog_store() -> CatalogStore:
         seed_catalog_akiem(store)
         seed_lot2(store)
         seed_lot3(store)
-        # Lot 5 n'est pas encore SQL : skip si SQL store (évite AttributeError)
-        if isinstance(store, InMemoryCatalogStore):
-            seed_lot5(store)
+        seed_lot5(store)
 
     return store
 
 
 _catalog_store: CatalogStore = _build_catalog_store()
 
-# Quote store Lot 4
-_quote_store: QuoteStore = InMemoryQuoteStore()
+
+def _build_quote_store() -> QuoteStore:
+    """Fabrique le store quote. Même URL que catalog pour cohérence
+    transactionnelle (une seule DB pour tout)."""
+    database_url = os.environ.get("CATALOG_DATABASE_URL")
+    if database_url:
+        from .catalog.sql_quote_store import SqlAlchemyQuoteStore
+        from .catalog.sql_store import make_catalog_session_factory
+        sf = make_catalog_session_factory(database_url)
+        return SqlAlchemyQuoteStore(sf)
+    return InMemoryQuoteStore()
+
+# Quote store Lot 4 — SQL si CATALOG_DATABASE_URL, sinon in-memory
+_quote_store: QuoteStore = _build_quote_store()
 
 
 def get_quote_store() -> QuoteStore:

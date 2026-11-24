@@ -1754,6 +1754,283 @@ class SqlAlchemyCatalogStore:
         )
 
 
+    # =========================================================================
+    # Lot 5 — Flotte réelle
+    # =========================================================================
+
+    def _ensure_lot5(self):
+        pass
+
+    def upsert_fleet_asset(self, a: FleetAsset) -> FleetAsset:
+        with self._sf() as session:
+            if session.get(TechnicalVariantRow, _s(a.technical_variant_id)) is None:
+                raise ValueError(f"TechnicalVariant {a.technical_variant_id} inconnue")
+            existing = session.execute(
+                select(FleetAssetRow).where(FleetAssetRow.asset_number == a.asset_number.upper())
+            ).scalar_one_or_none()
+            attrs = dict(
+                vehicle_registration_number=a.vehicle_registration_number,
+                technical_variant_id=_s(a.technical_variant_id),
+                manufacturing_year=a.manufacturing_year,
+                commissioning_date=a.commissioning_date,
+                ownership_status=a.ownership_status.value,
+                operational_status=a.operational_status.value,
+                current_country_id=_s(a.current_country_id) if a.current_country_id else None,
+                current_mileage_km=a.current_mileage_km,
+                current_engine_hours=a.current_engine_hours,
+                current_ecm_provider_id=_s(a.current_ecm_provider_id) if a.current_ecm_provider_id else None,
+                last_hm1_date=a.last_hm1_date,
+                last_hm2_date=a.last_hm2_date,
+                last_hm3_date=a.last_hm3_date,
+                last_bogie_swap_date=a.last_bogie_swap_date,
+                last_vgi_date=a.last_vgi_date,
+                notes=a.notes,
+                is_active=a.is_active,
+            )
+            if existing:
+                for k, v in attrs.items(): setattr(existing, k, v)
+                session.commit()
+                return self._row_to_fleet_asset(existing)
+            session.add(FleetAssetRow(
+                fleet_asset_id=_s(a.fleet_asset_id),
+                asset_number=a.asset_number.upper(),
+                **attrs,
+            ))
+            session.commit()
+            return a
+
+    def get_fleet_asset(self, aid: UUID) -> FleetAsset | None:
+        with self._sf() as session:
+            row = session.get(FleetAssetRow, _s(aid))
+            return self._row_to_fleet_asset(row) if row else None
+
+    def get_fleet_asset_by_asset_number(self, asset_number: str) -> FleetAsset | None:
+        with self._sf() as session:
+            row = session.execute(
+                select(FleetAssetRow).where(FleetAssetRow.asset_number == asset_number.upper())
+            ).scalar_one_or_none()
+            return self._row_to_fleet_asset(row) if row else None
+
+    def list_fleet_assets(self, *, variant_id: UUID | None = None,
+                          operational_status=None) -> list[FleetAsset]:
+        with self._sf() as session:
+            stmt = select(FleetAssetRow)
+            if variant_id is not None:
+                stmt = stmt.where(FleetAssetRow.technical_variant_id == _s(variant_id))
+            if operational_status is not None:
+                val = operational_status.value if hasattr(operational_status, "value") else operational_status
+                stmt = stmt.where(FleetAssetRow.operational_status == val)
+            rows = session.execute(stmt.order_by(FleetAssetRow.asset_number)).scalars().all()
+            return [self._row_to_fleet_asset(r) for r in rows]
+
+    @staticmethod
+    def _row_to_fleet_asset(r: FleetAssetRow) -> FleetAsset:
+        return FleetAsset(
+            fleet_asset_id=UUID(r.fleet_asset_id),
+            asset_number=r.asset_number,
+            vehicle_registration_number=r.vehicle_registration_number,
+            technical_variant_id=UUID(r.technical_variant_id),
+            manufacturing_year=r.manufacturing_year,
+            commissioning_date=r.commissioning_date,
+            ownership_status=OwnershipStatus(r.ownership_status),
+            operational_status=OperationalStatus(r.operational_status),
+            current_country_id=UUID(r.current_country_id) if r.current_country_id else None,
+            current_mileage_km=r.current_mileage_km,
+            current_engine_hours=r.current_engine_hours,
+            current_ecm_provider_id=UUID(r.current_ecm_provider_id) if r.current_ecm_provider_id else None,
+            last_hm1_date=r.last_hm1_date,
+            last_hm2_date=r.last_hm2_date,
+            last_hm3_date=r.last_hm3_date,
+            last_bogie_swap_date=r.last_bogie_swap_date,
+            last_vgi_date=r.last_vgi_date,
+            notes=r.notes,
+            is_active=r.is_active,
+        )
+
+    def add_meter_reading(self, r: AssetMeterReading) -> AssetMeterReading:
+        with self._sf() as session:
+            asset = session.get(FleetAssetRow, _s(r.fleet_asset_id))
+            if asset is None:
+                raise ValueError(f"FleetAsset {r.fleet_asset_id} inconnu")
+            session.add(AssetMeterReadingRow(
+                meter_reading_id=_s(r.meter_reading_id),
+                fleet_asset_id=_s(r.fleet_asset_id),
+                reading_date=r.reading_date,
+                mileage_km=r.mileage_km,
+                engine_hours=r.engine_hours,
+                country_iso=r.country_iso,
+                source=r.source,
+                recorded_by=r.recorded_by,
+                recorded_at=r.recorded_at,
+                notes=r.notes,
+            ))
+            # Compteurs monotones croissants : on ne met à jour que si >
+            if r.mileage_km >= asset.current_mileage_km:
+                asset.current_mileage_km = r.mileage_km
+            if r.engine_hours >= asset.current_engine_hours:
+                asset.current_engine_hours = r.engine_hours
+            if r.country_iso:
+                country = self.get_country_by_iso(r.country_iso)
+                if country:
+                    asset.current_country_id = _s(country.country_id)
+            session.commit()
+            return r
+
+    def list_meter_readings(self, fleet_asset_id: UUID) -> list[AssetMeterReading]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(AssetMeterReadingRow).where(
+                    AssetMeterReadingRow.fleet_asset_id == _s(fleet_asset_id)
+                ).order_by(AssetMeterReadingRow.reading_date.desc())
+            ).scalars().all()
+            return [
+                AssetMeterReading(
+                    meter_reading_id=UUID(r.meter_reading_id),
+                    fleet_asset_id=UUID(r.fleet_asset_id),
+                    reading_date=r.reading_date,
+                    mileage_km=r.mileage_km,
+                    engine_hours=r.engine_hours,
+                    country_iso=r.country_iso,
+                    source=r.source,
+                    recorded_by=r.recorded_by,
+                    recorded_at=r.recorded_at,
+                    notes=r.notes,
+                )
+                for r in rows
+            ]
+
+    def add_maintenance_history(self, h: AssetMaintenanceHistoryEntry) -> AssetMaintenanceHistoryEntry:
+        with self._sf() as session:
+            asset = session.get(FleetAssetRow, _s(h.fleet_asset_id))
+            if asset is None:
+                raise ValueError(f"FleetAsset {h.fleet_asset_id} inconnu")
+            session.add(AssetMaintenanceHistoryRow(
+                maintenance_history_id=_s(h.maintenance_history_id),
+                fleet_asset_id=_s(h.fleet_asset_id),
+                operation_id=_s(h.operation_id),
+                operation_code=h.operation_code,
+                status=h.status.value,
+                planned_date=h.planned_date,
+                started_at=h.started_at,
+                completed_at=h.completed_at,
+                workshop_name=h.workshop_name,
+                workshop_country_iso=h.workshop_country_iso,
+                ecm_provider_id=_s(h.ecm_provider_id) if h.ecm_provider_id else None,
+                mileage_km_at_event=h.mileage_km_at_event,
+                engine_hours_at_event=h.engine_hours_at_event,
+                actual_cost_amount=h.actual_cost_amount,
+                billed_amount=h.billed_amount,
+                technician_notes=h.technician_notes,
+                recorded_by=h.recorded_by,
+                recorded_at=h.recorded_at,
+            ))
+            # Mise à jour des last_X_date
+            if h.status.value == "completed" and h.completed_at:
+                mapping = {
+                    "HM1": "last_hm1_date",
+                    "HM2": "last_hm2_date",
+                    "HM3": "last_hm3_date",
+                    "BOGIE_SWAP": "last_bogie_swap_date",
+                    "VGI": "last_vgi_date",
+                }
+                attr = mapping.get(h.operation_code.upper())
+                if attr:
+                    setattr(asset, attr, h.completed_at)
+            session.commit()
+            return h
+
+    def list_maintenance_history(self, fleet_asset_id: UUID) -> list[AssetMaintenanceHistoryEntry]:
+        with self._sf() as session:
+            rows = session.execute(
+                select(AssetMaintenanceHistoryRow).where(
+                    AssetMaintenanceHistoryRow.fleet_asset_id == _s(fleet_asset_id)
+                )
+            ).scalars().all()
+            entries = [
+                AssetMaintenanceHistoryEntry(
+                    maintenance_history_id=UUID(r.maintenance_history_id),
+                    fleet_asset_id=UUID(r.fleet_asset_id),
+                    operation_id=UUID(r.operation_id),
+                    operation_code=r.operation_code,
+                    status=MaintenanceEventStatus(r.status),
+                    planned_date=r.planned_date,
+                    started_at=r.started_at,
+                    completed_at=r.completed_at,
+                    workshop_name=r.workshop_name,
+                    workshop_country_iso=r.workshop_country_iso,
+                    ecm_provider_id=UUID(r.ecm_provider_id) if r.ecm_provider_id else None,
+                    mileage_km_at_event=r.mileage_km_at_event,
+                    engine_hours_at_event=r.engine_hours_at_event,
+                    actual_cost_amount=r.actual_cost_amount,
+                    billed_amount=r.billed_amount,
+                    technician_notes=r.technician_notes,
+                    recorded_by=r.recorded_by,
+                    recorded_at=r.recorded_at,
+                )
+                for r in rows
+            ]
+            return sorted(
+                entries,
+                key=lambda x: x.completed_at or x.planned_date or x.recorded_at.date(),
+                reverse=True,
+            )
+
+    def compute_fleet_asset_summary(self, fleet_asset_id: UUID) -> FleetAssetSummary | None:
+        """Même logique que InMemory ; les lookups font quelques requêtes
+        SQL, à grouper si volume devient critique."""
+        asset = self.get_fleet_asset(fleet_asset_id)
+        if asset is None:
+            return None
+        variant = self.get_technical_variant(asset.technical_variant_id)
+        variant_code = variant.variant_code if variant else "?"
+
+        country_iso = None
+        if asset.current_country_id:
+            country = self.get_country(asset.current_country_id)
+            if country:
+                country_iso = country.iso_alpha2
+
+        summary = FleetAssetSummary(
+            fleet_asset_id=asset.fleet_asset_id,
+            asset_number=asset.asset_number,
+            vehicle_registration_number=asset.vehicle_registration_number,
+            technical_variant_code=variant_code,
+            operational_status=asset.operational_status,
+            ownership_status=asset.ownership_status,
+            current_mileage_km=asset.current_mileage_km,
+            current_engine_hours=asset.current_engine_hours,
+            age_years=round(asset.age_years(), 2),
+            manufacturing_year=asset.manufacturing_year,
+            current_country_iso=country_iso,
+        )
+
+        for op in self.list_maintenance_operations():
+            code = op.operation_code.upper()
+            if code == "HM1" and op.interval_mileage_km:
+                base_km = 0
+                if asset.last_hm1_date:
+                    base_km = max(0, asset.current_mileage_km - op.interval_mileage_km)
+                summary.next_hm1_due_km = (base_km // op.interval_mileage_km + 1) * op.interval_mileage_km
+            elif code == "HM2" and op.interval_mileage_km:
+                summary.next_hm2_due_km = (
+                    (asset.current_mileage_km // op.interval_mileage_km) + 1
+                ) * op.interval_mileage_km
+            elif code == "HM3" and op.interval_mileage_km:
+                summary.next_hm3_due_km = (
+                    (asset.current_mileage_km // op.interval_mileage_km) + 1
+                ) * op.interval_mileage_km
+            elif code == "VGI" and op.interval_months:
+                from datetime import timedelta
+                base_date = asset.last_vgi_date or asset.commissioning_date
+                summary.next_vgi_due_date = base_date + timedelta(days=op.interval_months * 30)
+
+        candidates = [v for v in [summary.next_hm1_due_km, summary.next_hm2_due_km, summary.next_hm3_due_km] if v]
+        if candidates:
+            summary.km_until_next_hm = max(0, min(candidates) - asset.current_mileage_km)
+
+        return summary
+
+
 def make_catalog_session_factory(database_url: str) -> sessionmaker[Session]:
     """Factory helper. Crée l'engine + la sessionmaker en une ligne."""
     from sqlalchemy import create_engine
