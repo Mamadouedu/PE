@@ -318,12 +318,17 @@ def _build_quote_store() -> QuoteStore:
     return InMemoryQuoteStore()
 
 
-# Audit trail : bascule en SQL si CATALOG_DATABASE_URL
+# Audit trail : bascule en SQL si CATALOG_DATABASE_URL, sinon in-memory
+# explicitement — le module `audit` garde un singleton global : sans
+# reset, un reload sans URL verrait l'ancien store SQL survivre.
 _database_url = os.environ.get("CATALOG_DATABASE_URL")
 if _database_url:
     from .sql_audit import SqlAlchemyAuditStore
     from .catalog.sql_store import make_catalog_session_factory as _mcsf
     set_audit_store(SqlAlchemyAuditStore(_mcsf(_database_url)))
+else:
+    from .audit import InMemoryAuditStore
+    set_audit_store(InMemoryAuditStore())
 
 # Quote store Lot 4 — SQL si CATALOG_DATABASE_URL, sinon in-memory
 _quote_store: QuoteStore = _build_quote_store()

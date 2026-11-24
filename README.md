@@ -92,15 +92,17 @@ sudo -u postgres psql -c "CREATE DATABASE pricing_test OWNER pricing;"
 export DATABASE_URL="postgresql+psycopg://pricing:pricing@localhost/pricing_dev"
 ```
 
-Les tables (`referentiel_versions`, `journal_entries`) sont créées
-automatiquement au premier démarrage (`db.create_all`). Il n'y a pas encore
-d'Alembic : à mettre en place avant la mise en production, dès qu'un second
-changement de schéma sera nécessaire.
+Les tables du Lot 1 original (`referentiel_versions`, `journal_entries`)
+sont créées automatiquement au premier démarrage (`db.create_all`). Les
+tables du catalog refonte (Lots 1→5 + audit) sont gérées par **Alembic** :
 
-Chaque version du référentiel est stockée comme un instantané JSON (pas huit
-tables normalisées) — voir l'en-tête de `db.py` pour le choix et ses
-limites. Le journal, lui, est une vraie table relationnelle, interrogeable
-indépendamment des versions.
+```bash
+alembic upgrade head   # applique toutes les migrations au DATABASE_URL courant
+```
+
+Le catalog étendu (constructeurs, variantes, locos de flotte, chiffrages,
+audit log) bascule en SQL via `CATALOG_DATABASE_URL` — même URL
+recommandée que `DATABASE_URL`.
 
 ## Lancer les tests (scénarios de non-régression, M2-07)
 
@@ -108,9 +110,15 @@ indépendamment des versions.
 pytest -q
 ```
 
-Les tests de persistance (`tests/test_db_postgres.py`) ont besoin de
-`pricing_test` (ci-dessus) ; sans elle, ils sont ignorés automatiquement.
-Tous les autres tournent en mémoire, sans base.
+Tests de persistance :
+- `tests/test_db_postgres.py` (Lot 1 original)
+- `tests/test_catalog_postgres.py` (catalog Lots 2→5, audit, soft delete,
+  CASCADE, JSONB, index composites)
+
+Les deux détectent `TEST_DATABASE_URL` (défaut
+`postgresql+psycopg://pricing:pricing@localhost/pricing_test`) ; sans PG
+joignable, ils sont ignorés automatiquement. Tous les autres tournent en
+SQLite in-memory, sans base.
 
 ## Lancer l'API
 
