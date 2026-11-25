@@ -1,0 +1,52 @@
+# Build artefacts et caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+
+# Virtualenv (le venv runtime se crée dans l'image)
+.venv/
+venv/
+env/
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Docs et CI
+*.md
+docs/
+
+# Tests
+tests/
+.coverage
+coverage.xml
+htmlcov/
+
+# Frontend (séparé — a sa propre image s'il doit être servi en prod)
+frontend/
+PricingHub/
+
+# Local dev
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+akiem_dev.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

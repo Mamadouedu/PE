@@ -122,10 +122,33 @@ SQLite in-memory, sans base.
 
 ## CI (GitHub Actions)
 
-`.github/workflows/ci.yml` lance la suite sur chaque push et PR vers
-`main`, en matrix Python 3.11/3.12/3.13 avec services PostgreSQL 16 et
-Redis 7. Les variables `TEST_DATABASE_URL` et `REDIS_URL` sont fournies
-par les services, donc tous les tests tournent (aucun skip en CI).
+`.github/workflows/ci.yml` lance deux jobs sur chaque push et PR vers
+`main` :
+- **tests** : matrix Python 3.11/3.12/3.13 avec services PostgreSQL 16
+  et Redis 7. Les variables `TEST_DATABASE_URL` et `REDIS_URL` sont
+  fournies, donc aucun test skippé en CI.
+- **docker-build** (après tests verts) : build l'image Docker et
+  lance un smoke test sur `/healthz` pour garantir que le Dockerfile
+  reste valide.
+
+## Déploiement Docker
+
+Un `Dockerfile` multi-stage et un `docker-compose.yml` sont fournis.
+
+```bash
+docker compose up --build        # premier lancement (PG + Redis + API)
+```
+
+- L'image runtime est mince (venv + libpq, pas de toolchain de build)
+- User non-root (`app:app`)
+- `gunicorn` + workers `uvicorn` (nombre réglable via `GUNICORN_WORKERS`)
+- Logs JSON activés par défaut (`LOG_FORMAT=json`)
+- `HEALTHCHECK` Docker pointe sur `/healthz`
+- Service séparé `api-migrate` applique `alembic upgrade head` avant
+  que l'API démarre — pas de race au boot
+
+L'API répond sur http://localhost:8000, la doc Swagger sur
+http://localhost:8000/docs.
 
 ## Observabilité (logs JSON + request_id)
 

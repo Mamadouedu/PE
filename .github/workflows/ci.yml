@@ -67,3 +67,37 @@ jobs:
 
       - name: Lancer la suite de tests
         run: pytest -q -rs --maxfail=5
+
+  docker-build:
+    runs-on: ubuntu-latest
+    name: docker build + smoke test
+    needs: tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t pricinghub-api:ci .
+
+      - name: Smoke test healthz
+        run: |
+          docker run -d --name api -p 8000:8000 \
+            -e CATALOG_DATABASE_URL="" \
+            -e REDIS_URL="" \
+            pricinghub-api:ci
+          # Attend que gunicorn démarre
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/healthz; then
+              echo ""
+              echo "Healthz OK au bout de $i secondes"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Healthz n'a pas répondu dans les 30s"
+          docker logs api
+          exit 1
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f api || true
