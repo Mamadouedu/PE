@@ -456,6 +456,11 @@ app.include_router(build_health_router(
     version="0.1.0",
 ))
 
+# Métriques Prometheus : /metrics text format standard
+from .metrics import build_metrics_router, set_service_info
+set_service_info(service="pricinghub-api", version="0.1.0")
+app.include_router(build_metrics_router())
+
 
 def get_utilisateur(utilisateur: Utilisateur = Depends(get_current_user)) -> str:
     """Compat : retourne l'e-mail de l'utilisateur courant (résolu par
@@ -521,10 +526,12 @@ def login(body: _LoginRequest, request: Request) -> dict:
 
     Protection brute force : 5 échecs sur un email ou 20 sur une IP
     dans les 15 min → 429 avec Retry-After."""
+    from .metrics import record_login
     client_ip = request.client.host if request.client else None
     # Pré-check rate limit : si déjà verrouillé, 429 sans toucher au hash
     check = _rate_limiter.verifier_et_incrementer(body.email, client_ip)
     if not check.autorise:
+        record_login("rate_limited")
         raise HTTPException(
             status_code=429,
             detail=f"Trop de tentatives ({check.raison}). "
@@ -535,11 +542,13 @@ def login(body: _LoginRequest, request: Request) -> dict:
     utilisateur = _users.get(body.email)
     if utilisateur is None or not utilisateur.actif:
         # L'échec a déjà été compté par verifier_et_incrementer
+        record_login("unknown_user")
         log_audit(actor_email=body.email, action="LOGIN_FAILED",
                   entity_type="Utilisateur", entity_id=body.email,
                   details={"raison": "inconnu_ou_inactif"})
         raise HTTPException(status_code=401, detail="Identifiants invalides")
     if not verifier_mot_de_passe(body.mot_de_passe, utilisateur.hash_mot_de_passe):
+        record_login("invalid_password")
         log_audit(actor_email=body.email, action="LOGIN_FAILED",
                   entity_type="Utilisateur", entity_id=body.email,
                   details={"raison": "mdp_invalide"})
@@ -547,6 +556,7 @@ def login(body: _LoginRequest, request: Request) -> dict:
     # Succès : reset le compteur d'échecs sur cet email (l'IP reste
     # comptée pour éviter qu'un attaquant ne spamme plusieurs emails)
     _rate_limiter.reset(body.email)
+    record_login("success")
     # Rehash transparent si nécessaire
     if needs_rehash(utilisateur.hash_mot_de_passe):
         utilisateur.hash_mot_de_passe = hacher_mot_de_passe(body.mot_de_passe)

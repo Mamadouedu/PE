@@ -116,6 +116,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             raise
         finally:
             duration_ms = (time.perf_counter() - start) * 1000
+            # Route template (ex. "/catalog/quotes/{quote_id}") et pas
+            # le path brut : évite d'exploser la cardinalité des
+            # métriques Prometheus avec les UUIDs dans l'URL.
+            route = getattr(
+                request.scope.get("route"), "path", request.url.path,
+            )
             # Les probes K8s sont loguées en DEBUG pour ne pas polluer.
             level = logging.DEBUG if request.url.path in _HEALTH_PATHS else logging.INFO
             self._log.log(
@@ -123,9 +129,17 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 extra={
                     "method": request.method,
                     "path": request.url.path,
+                    "route": route,
                     "status_code": status,
                     "duration_ms": round(duration_ms, 2),
                     "client_ip": request.client.host if request.client else None,
                 },
             )
+            # Métriques Prometheus (import tardif : évite dépendance
+            # dure quand on importe juste observability pour les logs).
+            try:
+                from .metrics import observe_http_request
+                observe_http_request(request.method, route, status, duration_ms)
+            except ImportError:
+                pass
             _request_id_var.reset(token)

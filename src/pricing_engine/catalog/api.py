@@ -548,7 +548,10 @@ def build_catalog_router(
             svc: QuoteService = Depends(_service),
             user = Depends(get_current_user),
         ):
-            return svc.creer_quote(body.client_code, body.client_name, user.email)
+            quote = svc.creer_quote(body.client_code, body.client_name, user.email)
+            from ..metrics import record_quote_created
+            record_quote_created()
+            return quote
 
         @router.get("/quotes")
         def list_quotes(
@@ -667,6 +670,7 @@ def build_catalog_router(
             except ValueError as e:
                 raise HTTPException(409, str(e))
             from ..audit import log_audit
+            from ..metrics import record_quote_submitted
             log_audit(
                 actor_email=user.email, actor_role=user.role.value,
                 action="SUBMIT", entity_type="Quote", entity_id=str(quote_id),
@@ -674,6 +678,7 @@ def build_catalog_router(
                          "niveau_validation": result.niveau_validation,
                          "total_mensuel": result.total_mensuel},
             )
+            record_quote_submitted(result.niveau_validation)
             return result
 
         @router.post("/quotes/{quote_id}/decision", response_model=Quote)
@@ -690,6 +695,7 @@ def build_catalog_router(
             except ValueError as e:
                 raise HTTPException(409, str(e))
             from ..audit import log_audit
+            from ..metrics import record_quote_decided
             log_audit(
                 actor_email=user.email, actor_role=user.role.value,
                 action="APPROVE" if body.approved else "REJECT",
@@ -697,6 +703,7 @@ def build_catalog_router(
                 details={"quote_number": result.quote_number,
                          "comment": body.comment},
             )
+            record_quote_decided(body.approved)
             return result
 
         @router.delete("/quotes/{quote_id}", status_code=204)

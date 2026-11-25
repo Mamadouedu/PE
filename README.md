@@ -155,6 +155,26 @@ timeline.
   si une dépendance tombe. Le LB sort cette instance du pool sans
   restart. JSON structuré avec `latency_ms` par check.
 
+## Métriques Prometheus
+
+- `GET /metrics` — format texte Prometheus standard, scrapable
+  directement par un serveur Prometheus ou un side-car OpenTelemetry.
+- HTTP générique :
+  - `http_requests_total{method,route,status_code}` — compteur par
+    requête terminée
+  - `http_request_duration_ms{method,route}` — histogramme latence
+    (buckets 5ms→10s)
+  - Le label `route` est la **template FastAPI** (`/catalog/quotes/{quote_id}`),
+    pas le path brut, pour borner la cardinalité
+- Métier :
+  - `pricinghub_login_attempts_total{result}` — result ∈ {success,
+    invalid_password, unknown_user, rate_limited}
+  - `pricinghub_quotes_created_total`
+  - `pricinghub_quotes_submitted_total{niveau_validation}` — 0/1/2
+  - `pricinghub_quotes_decided_total{decision}` — approved/rejected
+- Système :
+  - `pricinghub_service_info{service,version}` — infos statiques
+
 ## Sessions multi-instance (Redis)
 
 Par défaut les sessions utilisateurs sont en mémoire : OK pour un seul
