@@ -5,6 +5,10 @@ __pycache__/
 .venv/
 venv/
 
+# Artefacts de build setuptools (pip install non-éditable local)
+build/
+dist/
+
 # SQLite dev databases générées localement
 *.db
 *.db-journal
