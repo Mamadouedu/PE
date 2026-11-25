@@ -131,6 +131,42 @@ SQLite in-memory, sans base.
   lance un smoke test sur `/healthz` pour garantir que le Dockerfile
   reste valide.
 
+## Import CSV de la flotte Akiem
+
+Pour onboarding de la vraie flotte (en remplacement du seed de dev) :
+
+```bash
+# Dry-run : valide le CSV, rapporte, n'écrit rien
+python scripts/import_fleet_csv.py flotte_akiem.csv
+
+# Apply : écrit en base après validation
+python scripts/import_fleet_csv.py flotte_akiem.csv --apply
+
+# Avec URL de base explicite (sinon CATALOG_DATABASE_URL de l'env)
+python scripts/import_fleet_csv.py flotte_akiem.csv --apply \
+    --database-url postgresql+psycopg://pricing:pricing@localhost/pricing
+```
+
+Format attendu : CSV avec en-tête (séparateur auto-détecté `,` `;` `\t`
+`|` + BOM UTF-8 toléré). Colonnes :
+
+```
+asset_number,vehicle_registration_number,technical_variant_code,
+manufacturing_year,commissioning_date,ownership_status,
+operational_status,current_mileage_km,current_engine_hours,
+current_country_iso,current_ecm_provider_code,notes
+```
+
+Exemple complet : `scripts/csv_exemples/flotte_akiem_exemple.csv`.
+
+Garanties :
+- **Dry-run par défaut** : l'opérateur relit le rapport avant apply
+- **Fail-fast** : si une ligne rejette, l'apply n'écrit rien (zéro
+  half-way state)
+- **Idempotent** : un `asset_number` existant est upserté, pas dupliqué
+- **FK résolues par code lisible** : pas d'UUIDs dans le CSV
+- Codes retour CLI : 0 (OK), 1 (rejets), 2 (invocation)
+
 ## Déploiement Docker
 
 Un `Dockerfile` multi-stage et un `docker-compose.yml` sont fournis.

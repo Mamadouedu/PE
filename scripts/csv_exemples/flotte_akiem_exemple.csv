@@ -1,0 +1,5 @@
+asset_number,vehicle_registration_number,technical_variant_code,manufacturing_year,commissioning_date,ownership_status,operational_status,current_mileage_km,current_engine_hours,current_country_iso,current_ecm_provider_code,notes
+AK-00800,91 80 6193 800-5 D-AKIEM,193-DABNL,2022,2022-04-15,owned,available,120000,0,DE,DB_MAINTENANCE,Nouvelle livraison 2022
+AK-00801,91 80 6193 801-3 D-AKIEM,193-DABNL,2022,2022-05-02,owned,available,115000,0,DE,DB_MAINTENANCE,
+AK-00802,91 80 6193 802-1 F-AKIEM,193-DACHI,2023,2023-01-10,owned,in_maintenance,80000,0,FR,,HM1 en atelier
+AK-00803,91 80 6193 803-9 NL-AKIEM,193-DABNL,2021,2021-09-20,leased_in,available,210000,0,NL,,Loco prêtée par SBB
