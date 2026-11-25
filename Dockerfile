@@ -46,8 +46,12 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY pyproject.toml ./
 COPY src ./src
 
+# Install non-éditable : le code source est copié dans site-packages
+# du venv. Comme ça on n'a plus besoin de garder /build/src dans
+# l'image runtime. Pas de .[dev] : la prod n'a pas besoin de pytest
+# ou fakeredis.
 RUN pip install --upgrade pip setuptools wheel \
- && pip install -e ".[dev]" \
+ && pip install . \
  && pip install gunicorn
 
 
@@ -70,8 +74,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN groupadd --system app && useradd --system --gid app --home /app app
 
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /build/src /app/src
-COPY pyproject.toml /app/
+# alembic a besoin du fichier .ini + du dossier migrations. Le code
+# applicatif est dans le venv (install non-éditable), pas la peine
+# de copier src/.
 COPY alembic.ini /app/
 COPY migrations /app/migrations
 

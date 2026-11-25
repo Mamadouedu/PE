@@ -28,5 +28,11 @@ dev = ["pytest>=8", "pypdf>=5", "fakeredis>=2"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# Assets Swagger UI servis par /docs via StaticFiles. Sans ça, un
+# install non-éditable (image Docker de prod) laisse derrière les
+# fichiers CSS/JS et /docs renvoie 404.
+"pricing_engine" = ["static_vendor/**/*"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
